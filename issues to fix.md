@@ -1,6 +1,2 @@
 issues to fix:
-the reccmendations dont seem to actually be reported back.
-make a function for a body type analysis visual
-mermaid isnt circular
-next flow isnt showing
-make video functions
+make the flowcharts work properly now (shrink based on lower bound of the box, and always use all the space horizontally)

@@ -6,175 +6,22 @@ import tempfile
 import base64
 from streamlit.components.v1 import html
 
-# Function to sanitize and prepare mermaid chart content
-def sanitize_mermaid(flow_chart):
-    """
-    Sanitizes a mermaid chart string to ensure it only contains valid mermaid syntax.
-    """
-    # Remove any debug info sections if present
-    if "DEBUG INFO:" in flow_chart and "MERMAID:" in flow_chart:
-        parts = flow_chart.split("MERMAID:")
-        if len(parts) > 1:
-            flow_chart = parts[1].strip()
-    
-    # Remove markdown backticks if present
-    if "```mermaid" in flow_chart:
-        flow_chart = flow_chart.replace("```mermaid", "").strip()
-    if "```" in flow_chart:
-        flow_chart = flow_chart.replace("```", "").strip()
-    
-    # Ensure the chart starts with a valid mermaid syntax
-    if not any(flow_chart.strip().startswith(x) for x in ["graph ", "flowchart ", "sequenceDiagram", "classDiagram", "stateDiagram", "gantt", "pie"]):
-        # Try to extract just the graph portion if we can find it
-        if "graph " in flow_chart:
-            start_idx = flow_chart.find("graph ")
-            flow_chart = flow_chart[start_idx:].strip()
-        elif "flowchart " in flow_chart:
-            start_idx = flow_chart.find("flowchart ")
-            flow_chart = flow_chart[start_idx:].strip()
-        else:
-            # If no valid mermaid syntax is found, provide a simple default
-            flow_chart = """
-            graph TD
-                A[Starting Position] --> B[Position 1]
-                A --> C[Position 2]
-                B --> D[Submission 1]
-                C --> E[Submission 2]
-            """
-    
-    return flow_chart.strip()
 
-# Import the simplified modules
+# Import the helper modules
 try:
     from jiu_jitsu_functions import (
         generate_grappling_plan,
         analyse_grappling_match,
+        sanitize_mermaid,
         generate_flow_chart_with_start,
         generate_flow_chart,
         gracie_talk,
+        render_mermaid,
         generate_mermaid,
+        display_graph,
         next_move,
         get_attributes
-    )
-    # Override the default display_graph with our improved version
-    def display_graph(flow_chart):
-        """
-        Displays a Mermaid flow chart as an HTML object.
-        """
-        # Sanitize the flow chart content
-        flow_chart = sanitize_mermaid(flow_chart)
-        
-        # Add double quotes around node text and arrow labels for Mermaid 11.6.0 compatibility
-        lines = flow_chart.strip().split('\n')
-        fixed_lines = []
-        
-        for line in lines:
-            # Skip empty lines and the graph declaration line
-            if not line.strip() or line.strip().startswith('graph '):
-                fixed_lines.append(line)
-                continue
-            
-            # Fix arrow syntax with labels
-            if "-->" in line and "|" in line:
-                # Split into node1, arrow+label, node2
-                before_arrow, after_arrow = line.split("-->", 1)
-                
-                # Extract the label if it exists
-                if "|" in after_arrow:
-                    label_parts = after_arrow.split("|", 2)
-                    if len(label_parts) >= 2:
-                        # Add quotes around the label text
-                        label = label_parts[1]
-                        if not (label.startswith('"') and label.endswith('"')):
-                            label = f'"{label}"'
-                        
-                        # Rebuild the line with quoted label
-                        new_line = f"{before_arrow}-->|{label}|{label_parts[-1]}"
-                        fixed_lines.append(new_line)
-                    else:
-                        fixed_lines.append(line)
-                else:
-                    fixed_lines.append(line)
-            
-            # Fix node text in square brackets
-            elif "[" in line and "]" in line:
-                # Split by square brackets
-                parts = line.split("[", 1)
-                if len(parts) == 2 and "]" in parts[1]:
-                    node_id = parts[0].strip()
-                    node_text = parts[1].split("]", 1)[0]
-                    rest = parts[1].split("]", 1)[1] if "]" in parts[1] and len(parts[1].split("]", 1)) > 1 else ""
-                    
-                    # Add quotes around the node text
-                    if not (node_text.startswith('"') and node_text.endswith('"')):
-                        node_text = f'"{node_text}"'
-                    
-                    fixed_lines.append(f"{node_id}[{node_text}]{rest}")
-                else:
-                    fixed_lines.append(line)
-            else:
-                fixed_lines.append(line)
-        
-        flow_chart = "\n".join(fixed_lines)
-        
-        # Create HTML representation of the Mermaid chart
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Jiu-Jitsu Flow Chart</title>
-            <script src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
-            <script>
-                mermaid.initialize({{
-                    startOnLoad: true,
-                    theme: 'default',
-                    securityLevel: 'loose',
-                    flowchart: {{
-                        useMaxWidth: false,
-                        htmlLabels: true,
-                        curve: 'basis'
-                    }}
-                }});
-                
-                document.addEventListener('DOMContentLoaded', function() {{
-                    try {{
-                        mermaid.init(undefined, document.querySelector('.mermaid'));
-                    }} catch (e) {{
-                        console.error('Mermaid error:', e);
-                        document.querySelector('.error-message').textContent = 'Error rendering chart: ' + e.message;
-                        document.querySelector('.error-message').style.display = 'block';
-                    }}
-                }});
-            </script>
-            <style>
-                .mermaid {{
-                    width: 100%;
-                    height: auto;
-                    overflow: auto;
-                    padding: 20px;
-                }}
-                .error-message {{
-                    color: red;
-                    font-weight: bold;
-                    display: none;
-                    margin: 10px;
-                    padding: 10px;
-                    border: 1px solid red;
-                    background-color: #ffeeee;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="error-message"></div>
-            <pre class="mermaid">
-    {flow_chart}
-            </pre>
-        </body>
-        </html>
-        """
-        
-        return html
-    
+    )    
     from genai import GenAI
     from movieai import MovieAI
 except Exception as e:
@@ -238,13 +85,6 @@ def load_masters():
                 "Kyra Gracie", "Helio Gracie", "Carlos Gracie", "Eddie Bravo", "Andre Galvao", 
                 "Buchecha", "Keenan Cornelius", "Bernardo Faria", "Renzo Gracie", "Jean Jacques Machado"]
 
-# Function to render mermaid chart
-def render_mermaid(chart):
-    # Ensure chart is properly sanitized
-    sanitized_chart = sanitize_mermaid(chart)
-    html_content = display_graph(sanitized_chart)
-    return html(html_content, height=600)
-
 # Sidebar for navigation
 st.sidebar.title("Jiu-Jitsu Genie")
 app_function = st.sidebar.selectbox(
@@ -285,6 +125,7 @@ if app_function == "Position Image Recommendations":
     position_variable = st.text_input("Enter the jiu-jitsu position")
     isMMA = st.selectbox("Ruleset is MMA?", ["True", "False"]) == "True"
     keywords = st.text_area("Enter your ideas or keywords", height=100)
+    st.session_state.current_attributes = st.text_input("Athlete relative build (AI content policies prevent auto-analyzing this)")
     
     # Process button
     if st.button("Generate Recommendations"):
@@ -294,16 +135,16 @@ if app_function == "Position Image Recommendations":
             with st.spinner("Analyzing position and generating recommendations..."):
                 try:
                     # Get attributes
-                    attributes = get_attributes(image_location, position_variable)
+                    #attributes = get_attributes(image_location, position_variable)
                     
                     # Clean up the response if needed (remove debug info)
-                    if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
-                        attributes = attributes.split("RESPONSE:")[1].strip()
+                    #if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
+                    #    attributes = attributes.split("RESPONSE:")[1].strip()
                     
-                    st.session_state.current_attributes = attributes
+                    #st.session_state.current_attributes = attributes
                     
                     # Update keywords with attributes
-                    enhanced_keywords = keywords + " " + attributes
+                    enhanced_keywords = keywords + " " + st.session_state.current_attributes
                     
                     # Generate recommendations
                     recommendations = generate_grappling_plan(image_location, position_variable, isMMA, enhanced_keywords)
@@ -422,8 +263,6 @@ elif app_function == "Master Talk":
         app_function = "FLOW Chart Generator"
         st.rerun()
 
-
-
 # Function: FLOW Chart Generator
 elif app_function == "FLOW Chart Generator":
     st.title("FLOW Chart Generator")
@@ -432,7 +271,7 @@ elif app_function == "FLOW Chart Generator":
     position_variable = st.text_input("Starting Position")
     rules = st.selectbox("Rules", ["Unified MMA", "IBJJF"])
     isMMA = rules == "Unified MMA"
-    ideas = st.text_area("Ideas", height=100)
+    ideas = st.text_area("Ideas and Athlete Build", height=100)
     
     # Process attributes if an image has been uploaded
     attributes = ""
@@ -445,7 +284,7 @@ elif app_function == "FLOW Chart Generator":
                 attributes = attributes.split("RESPONSE:")[1].strip()
             
             st.session_state.current_attributes = attributes
-            st.success("Position attributes analyzed!")
+            st.success("Previous attributes included!")
         except Exception as e:
             st.warning(f"Could not analyze position attributes: {str(e)}")
     
@@ -462,7 +301,7 @@ elif app_function == "FLOW Chart Generator":
                         athlete_profile = "Average adult male jiu-jitsu practitioner with balanced build"
                     
                     # Show what's being passed to the function (for debugging)
-                    st.info(f"Generating flow chart for position: '{position_variable}' with rules: '{rules}'")
+                    st.info(f"Generating flow chart for position: '{position_variable}' with rules: '{rules}' and ideas: '{ideas}'")
                     
                     # Generate flow chart with explicit starting position
                     flow_chart = generate_flow_chart_with_start(
@@ -481,47 +320,105 @@ elif app_function == "FLOW Chart Generator":
                     st.error(f"An error occurred: {str(e)}")
                     import traceback
                     st.code(traceback.format_exc())
-    
-    # Display flow chart if available
-    # Add this in the FLOW Chart Generator section where the flow chart is displayed
+
+
+# Add a size control section
 if st.session_state.current_flowchart:
     st.markdown("### Flow Chart")
+    
+    # Add debugging information in an expander
+    with st.expander("Debug Flow Chart"):
+        st.code(st.session_state.current_flowchart, language="mermaid")
+        st.markdown("If the chart isn't displaying correctly, there might be a syntax issue with the Mermaid code.")
+    
+    # Add display size controls
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        chart_height = st.select_slider(
+            "Chart Height",
+            options=[600, 700, 800, 900, 1000, 1200, 1500],
+            value=800,
+            key="chart_height"
+        )
+    with col2:
+        use_full_width = st.checkbox("Use Full Width", value=True, key="use_full_width")
+    with col3:
+        st.info("**Tip:** For full interactive features, download the chart and open in a Mermaid editor.")
+    
     try:
-        # Add debugging information
-        with st.expander("Debug Flow Chart"):
-            st.code(st.session_state.current_flowchart, language="mermaid")
-            st.markdown("If the chart isn't displaying correctly, there might be a syntax issue with the Mermaid code.")
-            
-        # Try rendering the chart
-        render_mermaid(st.session_state.current_flowchart)
+        # Calculate width based on checkbox
+        chart_width = None if use_full_width else min(1200, chart_height * 1.5)
+        
+        # Render the chart with specified dimensions
+        render_mermaid(st.session_state.current_flowchart, height=chart_height, width=chart_width)
+        
+        # Add download option in a smaller column
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.download_button(
+                label="💾 Download as Mermaid Code",
+                data=st.session_state.current_flowchart,
+                file_name="jiu_jitsu_flowchart.mmd",
+                mime="text/plain",
+            )
+        with col2:
+            # Add link to online Mermaid editor
+            st.markdown("[🔗 Open in Mermaid Live Editor](https://mermaid.live/) (paste the downloaded code)")
+        
     except Exception as e:
         st.error(f"Error rendering flow chart: {str(e)}")
-        st.markdown("### Mermaid Code (for debugging)")
-        st.code(st.session_state.current_flowchart, language="mermaid")
         
         # Try a simplified version as fallback
         st.markdown("### Fallback Chart")
         fallback_chart = f"""
         graph TD
-            A[{position_variable}] -->|Move 1| B[Position 1]
-            A -->|Move 2| C[Position 2]
-            B -->|Action| D[Submission 1]
-            C -->|Action| E[Submission 2]
+            A["{position_variable}"] -->|"Move 1"| B["Position 1"]
+            A -->|"Move 2"| C["Position 2"]
+            B -->|"Action"| D["Submission 1"]
+            C -->|"Action"| E["Submission 2"]
         """
         try:
-            render_mermaid(fallback_chart)
+            st.code(fallback_chart, language="mermaid")
         except Exception as fallback_error:
-            st.error(f"Fallback chart also failed: {str(fallback_error)}")
+            st.error(f"Fallback also failed: {str(fallback_error)}")
+    
+    # Next move selection with the Flow button
+    with st.container():
+        st.markdown("### Navigate the Flow Chart")
+        st.markdown("Enter a position or transition from the chart above to explore further:")
         
-        # Next move selection
-        chosen_next = st.text_input("Choose a next move")
+        chosen_next = st.text_input("Select next position/transition", key="next_move_input")
         
-        if st.button("Flow") and chosen_next:
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            flow_button = st.button("Flow", key="flow_button", use_container_width=True)
+        with col2:
+            # Show a hint about what can be entered
+            if st.session_state.current_flowchart:
+                # Extract some node texts from the flowchart to show as examples
+                nodes = []
+                for line in st.session_state.current_flowchart.split("\n"):
+                    if "[" in line and "]" in line:
+                        start_idx = line.find("[")
+                        end_idx = line.find("]")
+                        node_text = line[start_idx+1:end_idx].strip()
+                        if node_text.startswith('"') and node_text.endswith('"'):
+                            node_text = node_text[1:-1]
+                        if node_text not in nodes and node_text != position_variable:
+                            nodes.append(node_text)
+                            if len(nodes) >= 3:
+                                break
+                
+                if nodes:
+                    examples = ", ".join([f'"{node}"' for node in nodes[:3]])
+                    st.markdown(f"*Examples from current chart: {examples}*")
+        
+        if flow_button and chosen_next:
             # Check if the move exists in the flowchart
             found = False
             if st.session_state.current_flowchart:
                 # Simple check if the node or line exists in the flowchart
-                found = chosen_next in st.session_state.current_flowchart
+                found = chosen_next.lower() in st.session_state.current_flowchart.lower()
             
             if not found:
                 st.error("Osu! That move is not in the current flow chart. Try another move.")
@@ -544,7 +441,7 @@ if st.session_state.current_flowchart:
                         st.session_state.current_flowchart = next_flowchart
                         
                         # Force a rerun to update the displayed chart
-                        st.rerun()  # Changed from st.experimental_rerun()
+                        st.rerun()
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
 
