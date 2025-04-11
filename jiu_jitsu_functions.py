@@ -125,6 +125,108 @@ def analyse_grappling_match(video, player_variable, isMMA=True, keywords="", sta
         return f"Error analyzing grappling match: {str(e)}"
 
 
+def generate_flow_chart_with_start(measurables, starting_position, isMMA=True, favorite_ideas=""):
+    """
+    Generates a Mermaid-based flow chart of jiu-jitsu moves starting from a specific position.
+    
+    Parameters:
+    -----------
+    measurables : str
+        Physical attributes and characteristics of the athlete
+    starting_position : str
+        The specific jiu-jitsu position to start the flow chart from
+    isMMA : bool, optional
+        Whether to use MMA rules (True) or IBJJF rules (False)
+    favorite_ideas : str, optional
+        Additional ideas or preferences to consider
+        
+    Returns:
+    --------
+    str
+        A mermaid flow chart as a string
+    """
+    # Debug information
+    debug_info = f"Function called with:\nmeasurables: {measurables}\nstarting_position: {starting_position}\nisMMA: {isMMA}\nfavorite_ideas: {favorite_ideas}\n"
+    debug_info += f"API Key set in environment: {'Yes' if os.environ.get('OPENAI_API_KEY') else 'No'}\n"
+    
+    try:
+        # Get GenAI instance with explicit error handling
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return "Error: OpenAI API Key not found in environment variables"
+        
+        debug_info += f"Creating GenAI instance with API key: {api_key[:5]}...\n"
+        genai = GenAI(api_key)
+        
+        # Create the prompt for flow chart generation with explicit starting position
+        match_type = "MMA" if isMMA else "IBJJF jiu-jitsu"
+        
+        prompt = f"""Generate a simple Mermaid flow chart showing jiu-jitsu moves starting from a specific position.
+
+STARTING POSITION: {starting_position}
+
+Important requirements:
+1. Use proper Mermaid syntax for version 11.6.0
+2. Start with "graph TD" (top-down direction)
+3. Use simple node IDs (A, B, C, etc.)
+4. The starting position MUST be node A
+5. Use proper arrow syntax with labels: A -->|Label text| B
+6. Keep it simple - at most 10 nodes total
+
+The chart should:
+1. Start with "{starting_position}" as node A
+2. Show 3-4 possible transitions from this position
+3. For each transition, show 1 follow-up move
+4. Use {match_type} rules
+
+The athlete has these attributes:
+{measurables}
+
+"""
+        
+        if favorite_ideas:
+            prompt += f"Additional considerations:\n{favorite_ideas}\n\n"
+        
+        prompt += """
+Use exactly this Mermaid format:
+```
+graph TD
+    A[Starting Position] -->|Transition action| B[Next Position]
+    A -->|Different action| C[Alternative Position]
+    B -->|Follow-up| D[Submission or Position]
+```
+
+Only return the Mermaid code - no explanations or other text.
+"""
+        
+        debug_info += f"Created prompt: {prompt[:100]}...\n"
+        
+        # Generate the mermaid object
+        debug_info += "Calling generate_text...\n"
+        mermaid_object = genai.generate_text(prompt)
+        debug_info += f"Response received from API: {mermaid_object[:100]}...\n"
+        
+        # Return a simple, guaranteed-valid flowchart if the response doesn't contain valid mermaid syntax
+        if "graph" not in mermaid_object.lower():
+            mermaid_object = f"""
+graph TD
+    A[{starting_position}] -->|Apply pressure| B[Mount]
+    A -->|Switch hips| C[North-South]
+    A -->|Grab wrist| D[Kimura Grip]
+    B -->|Isolate arm| E[Armbar]
+    C -->|Control neck| F[Darce Choke]
+    D -->|Rotate| G[Back Take]
+"""
+            debug_info += "Generated default mermaid flowchart (API response didn't contain valid mermaid)\n"
+        
+        # Return both debug info and mermaid object during development
+        return f"DEBUG INFO:\n{debug_info}\n\nMERMAID:\n{mermaid_object}"
+    
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        return f"Error generating flow chart:\n{debug_info}\n\nException: {str(e)}\n\nTraceback:\n{tb}"
+
 def generate_flow_chart(measurables, position_variable="both", isMMA=True, favorite_ideas=""):
     """
     Generates a Mermaid-based radial flow chart of jiu-jitsu moves.
@@ -152,8 +254,12 @@ def generate_flow_chart(measurables, position_variable="both", isMMA=True, favor
             prompt += f", and take into account that the athlete has the following ideas: {favorite_ideas}"
         
         # Add specific instructions for the output format
-        prompt += " of the athlete. Could you label the flow arrows in the diagram using a description of the primary movement required to get to that bubble. Only return the mermaid object, and not any shoulder text whatsoever"
-        
+        prompt += '''. Make the flow chart circular, with the choices radiating out from the center. 
+        I want to each bubble to be focused on an intermediate stage on the way to a larger move that is a couple bubbles away.
+        Label the flow arrows in the diagram using a description of the primary movement required to get to that intermediate step.
+        I want the descriptions to be 3-4 words each, and provide clear consise directions on exactly to get to the next intermediate step. 
+        Only return the circular mermaid object, and not any shoulder text whatsoever"        
+        '''
         debug_info += f"Created prompt: {prompt[:100]}...\n"
         
         # Generate the mermaid object
@@ -208,6 +314,7 @@ def gracie_talk(gracie_name, chat_history, user_message):
         return response
     except Exception as e:
         return f"Error generating chat response: {str(e)}"
+
 # Function to sanitize and prepare mermaid chart content
 def sanitize_mermaid(flow_chart):
     """
@@ -254,7 +361,55 @@ def sanitize_mermaid(flow_chart):
                 C --> E[Submission 2]
             """
     
-    return flow_chart.strip()
+    # Fix common syntax issues in Mermaid 11.6.0+
+    
+    # Remove extra spaces in node definitions
+    lines = flow_chart.strip().split('\n')
+    clean_lines = []
+    
+    for line in lines:
+        # Skip empty lines
+        if not line.strip():
+            continue
+            
+        # Fix incorrect arrow syntax (ensure spacing is correct)
+        if "-->" in line:
+            parts = line.split("-->")
+            if len(parts) == 2:
+                node1 = parts[0].strip()
+                
+                # Check if there's a label on the arrow
+                if "|" in parts[1]:
+                    arrow_parts = parts[1].split("|", 1)
+                    if len(arrow_parts) == 2 and "|" in arrow_parts[1]:
+                        label = arrow_parts[1].split("|")[0].strip()
+                        node2 = arrow_parts[1].split("|")[1].strip()
+                        line = f"    {node1} -->|{label}| {node2}"
+                    else:
+                        # Handle normal arrow with label
+                        arrow_label = arrow_parts[0].strip()
+                        node2 = arrow_parts[1].strip()
+                        line = f"    {node1} -->{arrow_label} {node2}"
+                else:
+                    # Simple arrow without label
+                    node2 = parts[1].strip()
+                    line = f"    {node1} --> {node2}"
+        
+        # Ensure proper indentation for nodes (Mermaid can be sensitive to this)
+        elif line.strip() and not line.startswith("graph") and not line.startswith("flowchart"):
+            if not line.strip().startswith("    "):
+                line = f"    {line.strip()}"
+        
+        clean_lines.append(line)
+    
+    # Ensure the graph has a valid direction (TD, LR, RL, BT)
+    if clean_lines and ('graph ' in clean_lines[0] or 'flowchart ' in clean_lines[0]):
+        graph_line = clean_lines[0]
+        if not any(direction in graph_line for direction in ['TD', 'LR', 'RL', 'BT']):
+            # Default to top-down direction if missing
+            clean_lines[0] = clean_lines[0].rstrip() + " TD"
+    
+    return "\n".join(clean_lines)
 
 
 

@@ -49,6 +49,7 @@ try:
     from jiu_jitsu_functions import (
         generate_grappling_plan,
         analyse_grappling_match,
+        generate_flow_chart_with_start,
         generate_flow_chart,
         gracie_talk,
         generate_mermaid,
@@ -63,18 +64,86 @@ try:
         # Sanitize the flow chart content
         flow_chart = sanitize_mermaid(flow_chart)
         
+        # Add double quotes around node text and arrow labels for Mermaid 11.6.0 compatibility
+        lines = flow_chart.strip().split('\n')
+        fixed_lines = []
+        
+        for line in lines:
+            # Skip empty lines and the graph declaration line
+            if not line.strip() or line.strip().startswith('graph '):
+                fixed_lines.append(line)
+                continue
+            
+            # Fix arrow syntax with labels
+            if "-->" in line and "|" in line:
+                # Split into node1, arrow+label, node2
+                before_arrow, after_arrow = line.split("-->", 1)
+                
+                # Extract the label if it exists
+                if "|" in after_arrow:
+                    label_parts = after_arrow.split("|", 2)
+                    if len(label_parts) >= 2:
+                        # Add quotes around the label text
+                        label = label_parts[1]
+                        if not (label.startswith('"') and label.endswith('"')):
+                            label = f'"{label}"'
+                        
+                        # Rebuild the line with quoted label
+                        new_line = f"{before_arrow}-->|{label}|{label_parts[-1]}"
+                        fixed_lines.append(new_line)
+                    else:
+                        fixed_lines.append(line)
+                else:
+                    fixed_lines.append(line)
+            
+            # Fix node text in square brackets
+            elif "[" in line and "]" in line:
+                # Split by square brackets
+                parts = line.split("[", 1)
+                if len(parts) == 2 and "]" in parts[1]:
+                    node_id = parts[0].strip()
+                    node_text = parts[1].split("]", 1)[0]
+                    rest = parts[1].split("]", 1)[1] if "]" in parts[1] and len(parts[1].split("]", 1)) > 1 else ""
+                    
+                    # Add quotes around the node text
+                    if not (node_text.startswith('"') and node_text.endswith('"')):
+                        node_text = f'"{node_text}"'
+                    
+                    fixed_lines.append(f"{node_id}[{node_text}]{rest}")
+                else:
+                    fixed_lines.append(line)
+            else:
+                fixed_lines.append(line)
+        
+        flow_chart = "\n".join(fixed_lines)
+        
         # Create HTML representation of the Mermaid chart
         html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Jiu-Jitsu Flow Chart</title>
-            <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
             <script>
                 mermaid.initialize({{
                     startOnLoad: true,
                     theme: 'default',
                     securityLevel: 'loose',
+                    flowchart: {{
+                        useMaxWidth: false,
+                        htmlLabels: true,
+                        curve: 'basis'
+                    }}
+                }});
+                
+                document.addEventListener('DOMContentLoaded', function() {{
+                    try {{
+                        mermaid.init(undefined, document.querySelector('.mermaid'));
+                    }} catch (e) {{
+                        console.error('Mermaid error:', e);
+                        document.querySelector('.error-message').textContent = 'Error rendering chart: ' + e.message;
+                        document.querySelector('.error-message').style.display = 'block';
+                    }}
                 }});
             </script>
             <style>
@@ -82,21 +151,32 @@ try:
                     width: 100%;
                     height: auto;
                     overflow: auto;
+                    padding: 20px;
+                }}
+                .error-message {{
+                    color: red;
+                    font-weight: bold;
+                    display: none;
+                    margin: 10px;
+                    padding: 10px;
+                    border: 1px solid red;
+                    background-color: #ffeeee;
                 }}
             </style>
         </head>
         <body>
-            <div class="mermaid">
-            {flow_chart}
-            </div>
+            <div class="error-message"></div>
+            <pre class="mermaid">
+    {flow_chart}
+            </pre>
         </body>
         </html>
         """
         
         return html
     
-    from genai_simplified import GenAI
-    from movieai_simplified import MovieAI
+    from genai import GenAI
+    from movieai import MovieAI
 except Exception as e:
     st.error(f"Error importing required modules: {str(e)}")
     st.stop()
@@ -245,10 +325,22 @@ elif app_function == "Master Talk":
     # Load masters list
     masters = load_masters()
     
+    # Add a state variable to track the currently selected master
+    if 'current_master' not in st.session_state:
+        st.session_state.current_master = None
+    
     # Master selection dropdown
     master_info = st.selectbox("Select a Jiu-Jitsu Master", masters)
     
-    # Initialize chat if needed
+    # Check if the master has changed
+    master_changed = st.session_state.current_master != master_info
+    if master_changed:
+        # Clear the chat history when master changes
+        st.session_state.current_chat = []
+        # Update the current master
+        st.session_state.current_master = master_info
+    
+    # Initialize chat if needed (either first time or after master change)
     if len(st.session_state.current_chat) == 0:
         instructions = f"You are the jiu-jitsu master {master_info}. Have a conversation to me as this master and provide me troubleshooting help on my jiu-jitsu based on your fundamental principles of jiujitsu and notable successes."
         prompt = "Start a conversation to help me with my jiu-jitsu"
@@ -287,27 +379,50 @@ elif app_function == "Master Talk":
             genai = GenAI(os.environ.get("OPENAI_API_KEY"))
             instructions = f"You are the jiu-jitsu master {master_info}. Have a conversation to me as this master and provide me troubleshooting help on my jiu-jitsu based on your fundamental principles of jiujitsu and notable successes."
             
-            response = genai.generate_chat_response(
-                st.session_state.current_chat,
-                next_comment,
-                instructions
+            # Create a message list for the API call without modifying the original
+            messages_for_api = [
+                {"role": "system", "content": instructions}
+            ]
+            
+            # Add all non-system messages from the current chat
+            for msg in st.session_state.current_chat:
+                if msg["role"] != "system":
+                    messages_for_api.append(msg.copy())
+            
+            # Add the new user message
+            messages_for_api.append({"role": "user", "content": next_comment})
+            
+            # Call the OpenAI API directly without using generate_chat_response
+            if not genai.client:
+                genai.client = openai.Client(api_key=genai.openai_api_key)
+            
+            # Make the API call
+            completion = genai.client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "text"},
+                messages=messages_for_api
             )
+            
+            # Extract the response
+            response = completion.choices[0].message.content
             
             # Clean up the response if needed
             if "[Debug:" in response:
                 response = response.split("[Debug:")[0].strip()
             
-            # Update chat history
+            # Update the chat history with the new messages
             st.session_state.current_chat.append({"role": "user", "content": next_comment})
             st.session_state.current_chat.append({"role": "assistant", "content": response})
             
-            # Rerun to update displayed conversation
-            st.experimental_rerun()
+            # Rerun to update the display
+            st.rerun()
     
     # Button to switch to FLOW Chart Generator
     if st.button("Generate FLOW"):
         app_function = "FLOW Chart Generator"
-        st.experimental_rerun()
+        st.rerun()
+
+
 
 # Function: FLOW Chart Generator
 elif app_function == "FLOW Chart Generator":
@@ -341,9 +456,17 @@ elif app_function == "FLOW Chart Generator":
         else:
             with st.spinner("Generating flow chart..."):
                 try:
-                    # Generate flow chart
-                    flow_chart = generate_flow_chart(
-                        attributes if attributes else st.session_state.current_attributes,
+                    # Use default athlete profile if no attributes are available
+                    athlete_profile = attributes if attributes else st.session_state.current_attributes
+                    if not athlete_profile or athlete_profile.strip() == "":
+                        athlete_profile = "Average adult male jiu-jitsu practitioner with balanced build"
+                    
+                    # Show what's being passed to the function (for debugging)
+                    st.info(f"Generating flow chart for position: '{position_variable}' with rules: '{rules}'")
+                    
+                    # Generate flow chart with explicit starting position
+                    flow_chart = generate_flow_chart_with_start(
+                        athlete_profile,
                         position_variable,
                         isMMA,
                         ideas
@@ -356,15 +479,39 @@ elif app_function == "FLOW Chart Generator":
                     st.session_state.current_flowchart = flow_chart
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
     
     # Display flow chart if available
-    if st.session_state.current_flowchart:
-        st.markdown("### Flow Chart")
+    # Add this in the FLOW Chart Generator section where the flow chart is displayed
+if st.session_state.current_flowchart:
+    st.markdown("### Flow Chart")
+    try:
+        # Add debugging information
+        with st.expander("Debug Flow Chart"):
+            st.code(st.session_state.current_flowchart, language="mermaid")
+            st.markdown("If the chart isn't displaying correctly, there might be a syntax issue with the Mermaid code.")
+            
+        # Try rendering the chart
+        render_mermaid(st.session_state.current_flowchart)
+    except Exception as e:
+        st.error(f"Error rendering flow chart: {str(e)}")
+        st.markdown("### Mermaid Code (for debugging)")
+        st.code(st.session_state.current_flowchart, language="mermaid")
+        
+        # Try a simplified version as fallback
+        st.markdown("### Fallback Chart")
+        fallback_chart = f"""
+        graph TD
+            A[{position_variable}] -->|Move 1| B[Position 1]
+            A -->|Move 2| C[Position 2]
+            B -->|Action| D[Submission 1]
+            C -->|Action| E[Submission 2]
+        """
         try:
-            render_mermaid(st.session_state.current_flowchart)
-        except Exception as e:
-            st.error(f"Error rendering flow chart: {str(e)}")
-            st.code(st.session_state.current_flowchart)
+            render_mermaid(fallback_chart)
+        except Exception as fallback_error:
+            st.error(f"Fallback chart also failed: {str(fallback_error)}")
         
         # Next move selection
         chosen_next = st.text_input("Choose a next move")
@@ -397,7 +544,7 @@ elif app_function == "FLOW Chart Generator":
                         st.session_state.current_flowchart = next_flowchart
                         
                         # Force a rerun to update the displayed chart
-                        st.experimental_rerun()
+                        st.rerun()  # Changed from st.experimental_rerun()
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
 
