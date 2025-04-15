@@ -1,2 +1,4 @@
 issues to fix:
-make the flowcharts work properly now (shrink based on lower bound of the box, and always use all the space horizontally)
+flowing in other categories
+link to chat
+max frames to analyzise

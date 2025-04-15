@@ -1330,7 +1330,7 @@ def render_mermaid(chart, height=800, width=None):
             body {{
                 margin: 0;
                 padding: 5px;
-                overflow: hidden;
+                overflow: auto;
             }}
             .mermaid-container {{
                 width: 100%;
@@ -1342,7 +1342,7 @@ def render_mermaid(chart, height=800, width=None):
             .mermaid {{
                 width: 100%;
                 height: 100%;
-                overflow: visible;
+                overflow: scroll;
             }}
             /* Some basic styling for the nodes */
             .node rect {{

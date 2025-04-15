@@ -105,7 +105,9 @@ if app_function == "Position Image Recommendations":
     st.title("Position Image Recommendations")
     
     # Image upload
-    uploaded_file = st.file_uploader("Upload an image of a jiu-jitsu position", type=['jpg', 'jpeg', 'png'])
+    uploaded_file = st.file_uploader("Upload an image of a jiu-jitsu position", 
+                                type=['jpg', 'jpeg', 'png'],
+                                key="position_image_uploader")
     image_location = None
     
     # Display the uploaded image
@@ -321,7 +323,6 @@ elif app_function == "FLOW Chart Generator":
                     import traceback
                     st.code(traceback.format_exc())
 
-
 # Add a size control section
 if st.session_state.current_flowchart:
     st.markdown("### Flow Chart")
@@ -331,20 +332,8 @@ if st.session_state.current_flowchart:
         st.code(st.session_state.current_flowchart, language="mermaid")
         st.markdown("If the chart isn't displaying correctly, there might be a syntax issue with the Mermaid code.")
     
-    # Add display size controls
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        chart_height = st.select_slider(
-            "Chart Height",
-            options=[600, 700, 800, 900, 1000, 1200, 1500],
-            value=800,
-            key="chart_height"
-        )
-    with col2:
-        use_full_width = st.checkbox("Use Full Width", value=True, key="use_full_width")
-    with col3:
-        st.info("**Tip:** For full interactive features, download the chart and open in a Mermaid editor.")
-    
+    chart_height = 800
+    use_full_width = True
     try:
         # Calculate width based on checkbox
         chart_width = None if use_full_width else min(1200, chart_height * 1.5)
@@ -445,18 +434,165 @@ if st.session_state.current_flowchart:
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
 
-# Function: Video Match Analysis
-elif app_function == "Video Match Analysis":
     st.title("Video Match Analysis")
     
     # Video upload
-    uploaded_file = st.file_uploader("Upload a video of a jiu-jitsu match", type=['mp4', 'mov', 'avi'])
+    uploaded_file = st.file_uploader("Upload a video of a jiu-jitsu match", 
+                               type=['mp4', 'mov', 'avi'],
+                               key="video_match_uploader")
     
     # Master selection for video analysis
     masters = load_masters()
     selected_master = st.selectbox("Select a Jiu-Jitsu Master for analysis", masters, index=0)
     
+    # Additional options
+    col1, col2 = st.columns(2)
+    with col1:
+        max_frames = st.slider("Max frames to analyze", min_value=5, max_value=20, value=10, 
+                              help="Higher values provide more detailed analysis but may take longer")
+    with col2:
+        rules = st.selectbox("Ruleset", ["IBJJF (Sport Jiu-Jitsu)", "Unified MMA"])
+        isMMA = "MMA" in rules
+    
     if uploaded_file is not None:
+        # Save the video temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            video_path = tmp_file.name
+        
+        # Update session state
+        st.session_state.current_video = video_path
+        
+        # Display the video
+        st.video(video_path)
+        
+        # Custom perspective options
+        st.markdown("### Analysis Focus")
+        focus_options = ["Both competitors", "Top position fighter", "Bottom position fighter"]
+        selected_focus = st.radio("Focus the analysis on:", focus_options, horizontal=True)
+        
+        # Map the selection to appropriate player_variable
+        if selected_focus == focus_options[0]:
+            player_variable = "both"
+        elif selected_focus == focus_options[1]:
+            player_variable = "top"
+        else:
+            player_variable = "bottom"
+        
+        # Additional context or specific points to focus on
+        context = st.text_area("Additional context for analysis (techniques, positions, etc.)", 
+                              placeholder="e.g., guard retention, submission defense, takedown entries...")
+        
+        # Analyze button
+        if st.button("Analyze Video"):
+            with st.spinner(f"Having Master {selected_master} analyze your video..."):
+                try:
+                    # Initialize MovieAI
+                    if 'OPENAI_API_KEY' in os.environ:
+                        movie_ai = MovieAI(os.environ.get("OPENAI_API_KEY"))
+                        
+                        # Extract a frame for the athlete attributes
+                        base64Frames, nframes, fps = movie_ai.extract_frames(video_path, max_samples=1)
+                        
+                        if base64Frames:
+                            # Save the frame as an image
+                            image_data = base64.b64decode(base64Frames[0])
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as img_file:
+                                img_file.write(image_data)
+                                frame_path = img_file.name
+                            
+                            # Update session state
+                            st.session_state.current_image = frame_path
+                            st.success("Extracted frame from video for reference")
+                            
+                            # Try to get attributes (catch exceptions to prevent stopping the analysis)
+                            try:
+                                attributes = get_attributes(frame_path, player_variable)
+                                
+                                # Clean up the response if needed
+                                if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
+                                    attributes = attributes.split("RESPONSE:")[1].strip()
+                                
+                                st.session_state.current_attributes = attributes
+                            except Exception as attr_e:
+                                st.warning(f"Could not analyze detailed attributes: {str(attr_e)}")
+                                st.session_state.current_attributes = "Experienced jiu-jitsu practitioner"
+                        
+                        # Build the analysis prompt for the video
+                        match_type = "MMA" if isMMA else "IBJJF sport jiu-jitsu"
+                        
+                        # Create a persona-specific prompt for the selected master
+                        master_prompt = f"You are {selected_master}, a renowned jiu-jitsu master. "
+                        master_prompt += f"Analyze this {match_type} match focusing on {player_variable}. "
+                        master_prompt += "Give specific, actionable feedback in your unique teaching style. "
+                        master_prompt += "Focus on technique details, strategic advice, and common mistakes. "
+                        
+                        if context:
+                            master_prompt += f"Pay special attention to: {context}. "
+                        
+                        # Generate the video analysis
+                        analysis = movie_ai.generate_video_description(
+                            video_path, 
+                            master_prompt,
+                            max_samples=max_frames
+                        )
+                        
+                        # Display analysis results
+                        st.markdown("## Master's Analysis")
+                        
+                        # Format the analysis as coming from the selected master
+                        formatted_analysis = f"""
+                        ### Analysis by {selected_master}:
+                        
+                        {analysis}
+                        """
+                        
+                        st.markdown(formatted_analysis)
+                        
+                        # Follow-up options
+                        st.success("Analysis complete! Would you like to explore techniques further?")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Generate FLOW Chart", key="post_analysis_flow"):
+                                # Extract key positions or techniques mentioned in the analysis
+                                analysis_words = analysis.split()
+                                if len(analysis_words) > 10:  # Ensure we have enough content
+                                    # Set up session state for FLOW chart
+                                    common_positions = ["guard", "mount", "side control", "back", 
+                                                     "half guard", "turtle", "closed guard"]
+                                    
+                                    # Find the first mentioned position in the analysis
+                                    starting_position = None
+                                    for pos in common_positions:
+                                        if pos in analysis.lower():
+                                            starting_position = pos
+                                            break
+                                    
+                                    if not starting_position:
+                                        starting_position = "Guard"  # Default fallback
+                                    
+                                    # Redirect to FLOW Chart Generator
+                                    st.session_state.flow_position = starting_position
+                                    st.session_state.flow_ideas = context if context else "Basic techniques"
+                                    app_function = "FLOW Chart Generator"
+                                    st.rerun()
+                        
+                        with col2:
+                            if st.button("Chat with Master", key="post_analysis_chat"):
+                                # Redirect to Master Talk with pre-selected master
+                                st.session_state.selected_master = selected_master
+                                app_function = "Master Talk"
+                                st.rerun()
+                                
+                    else:
+                        st.error("OpenAI API Key is required for video analysis")
+                        
+                except Exception as e:
+                    st.error(f"An error occurred during video analysis. Try again with a shorter video or different format.")
+                    st.info("Technical details (for debugging):")
+                    with st.expander("View error details"):
+                        st.code(f"Error: {str(e)}")
         # Save the video temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
             tmp_file.write(uploaded_file.read())
@@ -508,19 +644,178 @@ elif app_function == "Video Match Analysis":
                         st.info("Using simplified analysis due to missing OpenCV (cv2) module.")
                         
                         placeholder_analysis = f"""
-                        ### Analysis by {selected_master}:
-                        
-                        Looking at the video, I would focus on the following key areas:
-                        
-                        1. **Position Control**: Work on maintaining better posture in the guard position.
-                        2. **Transition Timing**: Your timing for guard passes can be improved with specific drills.
-                        3. **Submission Setups**: Consider chaining your attacks more effectively.
-                        
-                        I recommend focusing on drilling these specific areas in your next training sessions.
-                        """
-                        
+                        ### Analysis by {selected_master}:"""
+                        instructions = f"You are the jiu-jitsu master {selected_master}"
+                        prompt = "give me your top 3 things for every jiu-jitsu practitioner to work on based on your fundamental principles of jiujitsu and notable successes. Make sure you cite 1 notable victory for each thing to work on"
+                        genai = GenAI(os.environ.get("OPENAI_API_KEY"))
+                        placeholder_answer = genai.generate_text(prompt, instructions)
+                        # Placeholder analysis content
+                        placeholder_analysis +=f'''
+                          {placeholder_answer}'''
                         st.markdown(placeholder_analysis)
                     else:
                         st.error("OpenAI API Key is required for video analysis")
                 except Exception as e:
                     st.error(f"An error occurred during video analysis: {str(e)}")
+
+# Function: Video Match Analysis
+elif app_function == "Video Match Analysis":
+    st.title("Video Match Analysis")
+    
+    # Video upload
+    uploaded_file = st.file_uploader("Upload a video of a jiu-jitsu match", 
+                               type=['mp4', 'mov', 'avi'],
+                               key="video_match_uploader")
+    
+    # Master selection for video analysis
+    masters = load_masters()
+    selected_master = st.selectbox("Select a Jiu-Jitsu Master for analysis", masters, index=0)
+    
+    # Additional options
+    col1, col2 = st.columns(2)
+    with col1:
+        max_frames = st.slider("Max frames to analyze", min_value=5, max_value=20, value=10, 
+                              help="Higher values provide more detailed analysis but may take longer")
+    with col2:
+        rules = st.selectbox("Ruleset", ["IBJJF (Sport Jiu-Jitsu)", "Unified MMA"])
+        isMMA = "MMA" in rules
+    
+    if uploaded_file is not None:
+        # Save the video temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            video_path = tmp_file.name
+        
+        # Update session state
+        st.session_state.current_video = video_path
+        
+        # Display the video
+        st.video(video_path)
+        
+        # Custom perspective options
+        st.markdown("### Analysis Focus")
+        focus_options = ["Both competitors", "Top position fighter", "Bottom position fighter"]
+        selected_focus = st.radio("Focus the analysis on:", focus_options, horizontal=True)
+        
+        # Map the selection to appropriate player_variable
+        if selected_focus == focus_options[0]:
+            player_variable = "both"
+        elif selected_focus == focus_options[1]:
+            player_variable = "top"
+        else:
+            player_variable = "bottom"
+        
+        # Additional context or specific points to focus on
+        context = st.text_area("Additional context for analysis (techniques, positions, etc.)", 
+                              placeholder="e.g., guard retention, submission defense, takedown entries...")
+        
+        # Analyze button with a unique key
+        if st.button("Analyze Video", key="analyze_video_button"):
+            with st.spinner(f"Having Master {selected_master} analyze your video..."):
+                try:
+                    # Initialize MovieAI
+                    if 'OPENAI_API_KEY' in os.environ:
+                        movie_ai = MovieAI(os.environ.get("OPENAI_API_KEY"))
+                        
+                        # Extract a frame for the athlete attributes
+                        base64Frames, nframes, fps = movie_ai.extract_frames(video_path, max_samples=1)
+                        
+                        if base64Frames:
+                            # Save the frame as an image
+                            image_data = base64.b64decode(base64Frames[0])
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as img_file:
+                                img_file.write(image_data)
+                                frame_path = img_file.name
+                            
+                            # Update session state
+                            st.session_state.current_image = frame_path
+                            st.success("Extracted frame from video for reference")
+                            
+                            # Try to get attributes (catch exceptions to prevent stopping the analysis)
+                            try:
+                                attributes = get_attributes(frame_path, player_variable)
+                                
+                                # Clean up the response if needed
+                                if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
+                                    attributes = attributes.split("RESPONSE:")[1].strip()
+                                
+                                st.session_state.current_attributes = attributes
+                            except Exception as attr_e:
+                                st.warning(f"Could not analyze detailed attributes: {str(attr_e)}")
+                                st.session_state.current_attributes = "Experienced jiu-jitsu practitioner"
+                        
+                        # Build the analysis prompt for the video
+                        match_type = "MMA" if isMMA else "IBJJF sport jiu-jitsu"
+                        
+                        # Create a persona-specific prompt for the selected master
+                        master_prompt = f"You are {selected_master}, a renowned jiu-jitsu master. "
+                        master_prompt += f"Analyze this {match_type} match focusing on {player_variable}. "
+                        master_prompt += "Give specific, actionable feedback in your unique teaching style. "
+                        master_prompt += "Focus on technique details, strategic advice, and common mistakes. "
+                        
+                        if context:
+                            master_prompt += f"Pay special attention to: {context}. "
+                        
+                        # Generate the video analysis
+                        analysis = movie_ai.generate_video_description(
+                            video_path, 
+                            master_prompt,
+                            max_samples=max_frames
+                        )
+                        
+                        # Display analysis results
+                        st.markdown("## Master's Analysis")
+                        
+                        # Format the analysis as coming from the selected master
+                        formatted_analysis = f"""
+                        ### Analysis by {selected_master}:
+                        
+                        {analysis}
+                        """
+                        
+                        st.markdown(formatted_analysis)
+                        
+                        # Follow-up options
+                        st.success("Analysis complete! Would you like to explore techniques further?")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Generate FLOW Chart", key="post_analysis_flow"):
+                                # Extract key positions or techniques mentioned in the analysis
+                                analysis_words = analysis.split()
+                                if len(analysis_words) > 10:  # Ensure we have enough content
+                                    # Set up session state for FLOW chart
+                                    common_positions = ["guard", "mount", "side control", "back", 
+                                                     "half guard", "turtle", "closed guard"]
+                                    
+                                    # Find the first mentioned position in the analysis
+                                    starting_position = None
+                                    for pos in common_positions:
+                                        if pos in analysis.lower():
+                                            starting_position = pos
+                                            break
+                                    
+                                    if not starting_position:
+                                        starting_position = "Guard"  # Default fallback
+                                    
+                                    # Redirect to FLOW Chart Generator
+                                    st.session_state.flow_position = starting_position
+                                    st.session_state.flow_ideas = context if context else "Basic techniques"
+                                    app_function = "FLOW Chart Generator"
+                                    st.rerun()
+                        
+                        with col2:
+                            if st.button("Chat with Master", key="post_analysis_chat"):
+                                # Redirect to Master Talk with pre-selected master
+                                st.session_state.selected_master = selected_master
+                                app_function = "Master Talk"
+                                st.rerun()
+                                
+                    else:
+                        st.error("OpenAI API Key is required for video analysis")
+                        
+                except Exception as e:
+                    st.error(f"An error occurred during video analysis. Try again with a shorter video or different format.")
+                    st.info("Technical details (for debugging):")
+                    with st.expander("View error details"):
+                        st.code(f"Error: {str(e)}")
