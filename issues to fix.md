@@ -1,4 +1,3 @@
 issues to fix:
-flowing in other categories
-link to chat
-max frames to analyzise
+fix frames to analyze
+fix heigh matching of anime battle

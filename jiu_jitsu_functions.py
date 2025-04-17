@@ -1639,3 +1639,253 @@ def get_attributes(image, player_variable):
     except Exception as e:
         tb = traceback.format_exc()
         return f"Error analyzing attributes:\n{debug_info}\n\nException: {str(e)}\n\nTraceback:\n{tb}"
+    
+def adversarial_game_plan(original_plan, ruleset="IBJJF", position="", measurables="", api_key=None):
+    """
+    Generates an adversarial game plan to counter a jiu-jitsu strategy.
+    
+    Parameters:
+    -----------
+    original_plan : str
+        The original game plan text or Mermaid flowchart to counter
+    ruleset : str, optional
+        The ruleset to use (e.g., "IBJJF", "MMA")
+    position : str, optional
+        The starting position for the counter strategy
+    measurables : str, optional
+        Physical attributes and characteristics of the athlete
+    api_key : str, optional
+        OpenAI API key (defaults to environment variable)
+        
+    Returns:
+    --------
+    str
+        An adversarial game plan in the same format as the input (text or Mermaid)
+    """
+    # Debug information
+    debug_info = f"Function called with:\nruleset: {ruleset}\nposition: {position}\nmeasurables: {measurables}\n"
+    
+    try:
+        # Get API key from environment if not provided
+        if not api_key:
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return "Error: OpenAI API Key not found in environment variables"
+        
+        # Initialize GenAI
+        debug_info += f"Creating GenAI instance with API key: {api_key[:5]}...\n"
+        genai = GenAI(api_key)
+        
+        # Determine input format (Mermaid chart or text)
+        is_mermaid = "graph " in original_plan or "flowchart " in original_plan
+        debug_info += f"Input format detected: {'Mermaid chart' if is_mermaid else 'Text'}\n"
+        
+        # Create prompt based on format
+        if is_mermaid:
+            # For Mermaid flowchart input
+            prompt = f"""Generate an adversarial Jiu-Jitsu game plan to counter the following technique flowchart.
+
+ORIGINAL FLOWCHART:
+{original_plan}
+
+INSTRUCTIONS:
+1. Analyze the original flowchart and identify key vulnerabilities
+2. Create a NEW Mermaid flowchart that shows specific counters to the techniques
+3. Your flowchart must use the same format (graph LR/TD) as the original
+4. Start with node A being the initial counter position: "{position if position else 'Counter Strategy'}"
+5. Include specific technical details in your counter techniques
+6. Ensure each counter addresses an actual technique from the original flowchart
+7. ONLY return the Mermaid flowchart code, nothing else
+
+The counter strategy should follow {ruleset} rules.
+"""
+            if measurables:
+                prompt += f"\nThe athlete has these attributes: {measurables}"
+            
+            # Add formatting guidelines
+            prompt += """
+Important formatting requirements:
+1. Use simple node IDs (A, B, C, etc.)
+2. PUT DOUBLE QUOTES around all node text and arrow labels
+3. Make the starting position node A and place it in the center
+4. Maximum of 16-20 nodes total
+5. Create transitions that branch outward from the center
+"""
+        else:
+            # For text input
+            prompt = f"""Generate an adversarial Jiu-Jitsu game plan to counter the following strategy:
+
+ORIGINAL STRATEGY:
+{original_plan}
+
+INSTRUCTIONS:
+1. Analyze the original strategy and identify key vulnerabilities and weaknesses
+2. Create a detailed counter strategy that exploits these vulnerabilities
+3. Organize your response with clear sections and specific technical details
+4. Include specific grips, weight distribution, and timing
+5. Focus on preventing the opponent from implementing their game plan
+6. Include at least 3-4 specific counter techniques
+
+The counter strategy should follow {ruleset} rules and start from the {position if position else 'appropriate'} position.
+"""
+            if measurables:
+                prompt += f"\nThe counter athlete has these attributes: {measurables}"
+        
+        debug_info += f"Created prompt: {prompt[:100]}...\n"
+        
+        # Generate the adversarial game plan
+        debug_info += "Calling generate_text...\n"
+        response = genai.generate_text(prompt)
+        debug_info += f"Response received from API: {response[:100]}...\n"
+        
+        # Clean up the response
+        if "[Debug:" in response:
+            response = response.split("[Debug:")[0].strip()
+        
+        # For Mermaid, extract just the code
+        if is_mermaid and "```" in response:
+            code_parts = response.split("```")
+            for part in code_parts:
+                if "graph" in part or "flowchart" in part:
+                    response = part.strip()
+                    break
+            
+            # Sanitize the Mermaid chart
+            response = sanitize_mermaid(response)
+        
+        # Return both debug info and response during development
+        return f"DEBUG INFO:\n{debug_info}\n\nRESPONSE:\n{response}"
+    
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        return f"Error generating adversarial game plan:\n{debug_info}\n\nException: {str(e)}\n\nTraceback:\n{tb}"
+
+def format_strategy_for_display(strategy_text, role="initiator"):
+    """
+    Formats a strategy text for better display in the UI.
+    Detects bullet points and ensures proper HTML formatting.
+    
+    Parameters:
+    -----------
+    strategy_text : str
+        The strategy text to format
+    role : str
+        Either "initiator" or "defender" to determine styling
+        
+    Returns:
+    --------
+    str
+        HTML-formatted strategy text
+    """
+    # Strip any remaining markdown or formatting indicators
+    strategy_text = strategy_text.replace("```", "").strip()
+    
+    # Determine CSS class based on role
+    css_class = "initiator-column" if role == "initiator" else "defender-column"
+    
+    # Check if text already has bullet points
+    has_bullets = any(line.strip().startswith(('•', '-', '*', '1.', '2.', '3.')) for line in strategy_text.split('\n'))
+    
+    if has_bullets:
+        # Convert markdown-style bullets to HTML list items
+        lines = strategy_text.split('\n')
+        formatted_lines = []
+        
+        in_list = False
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith(('•', '-', '*')):
+                if not in_list:
+                    formatted_lines.append("<ul class='strategy-bullet'>")
+                    in_list = True
+                # Extract the text after the bullet
+                bullet_text = line[1:].strip()
+                formatted_lines.append(f"<li>{bullet_text}</li>")
+            elif line.startswith(('1.', '2.', '3.', '4.', '5.')):
+                if not in_list:
+                    formatted_lines.append("<ol>")
+                    in_list = True
+                # Extract the text after the number
+                number_text = line.split('.', 1)[1].strip()
+                formatted_lines.append(f"<li>{number_text}</li>")
+            else:
+                if in_list:
+                    formatted_lines.append("</ul>" if line.startswith(('•', '-', '*')) else "</ol>")
+                    in_list = False
+                formatted_lines.append(f"<p>{line}</p>")
+        
+        if in_list:
+            formatted_lines.append("</ul>" if lines[-1].startswith(('•', '-', '*')) else "</ol>")
+        
+        content = "\n".join(formatted_lines)
+    else:
+        # If no bullet points, just wrap in paragraph tags
+        paragraphs = [p for p in strategy_text.split('\n\n') if p.strip()]
+        content = "\n".join([f"<p>{p}</p>" for p in paragraphs])
+    
+    # Wrap in a div with appropriate class
+    formatted_html = f"""
+    <div class='strategy-entry {css_class}'>
+        {content}
+    </div>
+    """
+    
+    return formatted_html
+
+def display_strategy_battle(left_history, right_history):
+    """
+    Creates HTML for displaying the strategy battle between two opponents.
+    
+    Parameters:
+    -----------
+    left_history : list
+        List of strategies from the initiator
+    right_history : list
+        List of strategies from the defender
+        
+    Returns:
+    --------
+    str
+        HTML string for displaying the battle
+    """
+    # Create the columns
+    html = """
+    <div class='strategy-battle'>
+        <div class='row'>
+            <div class='column' style='width: 48%; float: left; margin-right: 2%;'>
+                <h4>Initiator Strategy</h4>
+    """
+    
+    # Add left column entries
+    for entry in left_history:
+        html += format_strategy_for_display(entry["content"], "initiator")
+    
+    # Close left column, start right column
+    html += """
+            </div>
+            <div class='column' style='width: 48%; float: left; margin-left: 2%;'>
+                <h4>Defender Strategy</h4>
+    """
+    
+    # Add right column entries
+    for entry in right_history:
+        html += format_strategy_for_display(entry["content"], "defender")
+    
+    # Close right column and container
+    html += """
+            </div>
+        </div>
+        <div style='clear: both;'></div>
+    </div>
+    """
+    
+    return html
+
+# For use in your Streamlit app, you would use:
+# st.markdown(display_strategy_battle(st.session_state.left_column_history, st.session_state.right_column_history), unsafe_allow_html=True)
+# Instead of manually creating and styling the columns
+
