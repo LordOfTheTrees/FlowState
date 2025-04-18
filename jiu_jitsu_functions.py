@@ -1838,7 +1838,8 @@ def format_strategy_for_display(strategy_text, role="initiator"):
 
 def display_strategy_battle(left_history, right_history):
     """
-    Creates HTML for displaying the strategy battle between two opponents.
+    Creates HTML for displaying the strategy battle between two opponents with equal height rows
+    and color coordination for sequential responses. Supports multiple messages per participant.
     
     Parameters:
     -----------
@@ -1852,40 +1853,511 @@ def display_strategy_battle(left_history, right_history):
     str
         HTML string for displaying the battle
     """
-    # Create the columns
+    # Start HTML with container and styling
     html = """
-    <div class='strategy-battle'>
-        <div class='row'>
-            <div class='column' style='width: 48%; float: left; margin-right: 2%;'>
+    <style>
+        .strategy-battle-container {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .strategy-row {
+            display: flex;
+            margin-bottom: 20px;
+            width: 100%;
+        }
+        
+        .strategy-cell {
+            width: 48%;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .strategy-cell.left {
+            margin-right: 4%;
+        }
+        
+        .strategy-cell h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            padding-bottom: 8px;
+        }
+        
+        .loading-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 150px;
+        }
+        
+        .loading-image {
+            max-width: 80%;
+            max-height: 130px;
+            object-fit: contain;
+        }
+        
+        /* Row color coordination */
+        .row-level-0 { background-color: rgba(230, 242, 255, 0.7); }
+        .row-level-1 { background-color: rgba(248, 238, 255, 0.7); }
+        .row-level-2 { background-color: rgba(255, 242, 230, 0.7); }
+        .row-level-3 { background-color: rgba(230, 255, 242, 0.7); }
+        .row-level-4 { background-color: rgba(255, 230, 230, 0.7); }
+        
+        /* Content formatting */
+        .strategy-content {
+            width: 100%;
+        }
+        
+        .strategy-bullet {
+            padding-left: 20px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+            list-style-type: disc;
+        }
+        
+        .strategy-bullet li {
+            margin-bottom: 10px;
+            padding-left: 5px;
+        }
+        
+        /* Empty cell styling */
+        .empty-cell {
+            background-color: rgba(245, 245, 245, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            font-style: italic;
+            min-height: 150px;
+        }
+    </style>
+    
+    <div class="strategy-battle-container">
+        <div class="strategy-row">
+            <div class="strategy-cell left">
                 <h4>Initiator Strategy</h4>
-    """
-    
-    # Add left column entries
-    for entry in left_history:
-        html += format_strategy_for_display(entry["content"], "initiator")
-    
-    # Close left column, start right column
-    html += """
             </div>
-            <div class='column' style='width: 48%; float: left; margin-left: 2%;'>
+            <div class="strategy-cell right">
                 <h4>Defender Strategy</h4>
-    """
-    
-    # Add right column entries
-    for entry in right_history:
-        html += format_strategy_for_display(entry["content"], "defender")
-    
-    # Close right column and container
-    html += """
             </div>
         </div>
-        <div style='clear: both;'></div>
-    </div>
     """
+    
+    # Create lists to pair messages for display
+    max_pairs = max(len(left_history), len(right_history))
+    paired_rows = []
+    
+    for i in range(max_pairs):
+        left_content = left_history[i]["content"] if i < len(left_history) else None
+        right_content = right_history[i]["content"] if i < len(right_history) else None
+        paired_rows.append((left_content, right_content, i))
+    
+    # Generate rows with matched heights
+    for left_content, right_content, index in paired_rows:
+        row_class = f"row-level-{index % 5}"  # Cycle through 5 different row colors
+        
+        html += f'<div class="strategy-row">'
+        
+        # Left cell (Initiator)
+        if left_content:
+            # Format the content with preferred bullet format
+            formatted_content = format_strategy_for_display(left_content, bullet_style='bullet')
+            html += f'<div class="strategy-cell left {row_class}"><div class="strategy-content">{formatted_content}</div></div>'
+        else:
+            # If waiting for response, show loading image
+            html += f'''
+            <div class="strategy-cell left {row_class} loading-cell">
+                <img src="hero_response.png" alt="Hero thinking..." class="loading-image">
+            </div>
+            '''
+        
+        # Right cell (Defender)
+        if right_content:
+            # Format the content with preferred bullet format
+            formatted_content = format_strategy_for_display(right_content, bullet_style='bullet')
+            html += f'<div class="strategy-cell right {row_class}"><div class="strategy-content">{formatted_content}</div></div>'
+        else:
+            # If waiting for response, show loading image
+            html += f'''
+            <div class="strategy-cell right {row_class} loading-cell">
+                <img src="villain_response.png" alt="Villain thinking..." class="loading-image">
+            </div>
+            '''
+            
+        html += '</div>'  # Close row
+    
+    # Close container
+    html += '</div>'
     
     return html
 
-# For use in your Streamlit app, you would use:
-# st.markdown(display_strategy_battle(st.session_state.left_column_history, st.session_state.right_column_history), unsafe_allow_html=True)
-# Instead of manually creating and styling the columns
+def format_strategy_for_display(strategy_text, bullet_style='bullet'):
+    """
+    Formats a strategy text for better display in the UI with preferred bullet formatting.
+    
+    Parameters:
+    -----------
+    strategy_text : str
+        The strategy text to format
+    bullet_style : str
+        Style of bullets to use ('bullet' or 'asterisk')
+        
+    Returns:
+    --------
+    str
+        HTML-formatted strategy text
+    """
+    # Strip any remaining markdown or formatting indicators
+    strategy_text = strategy_text.replace("```", "").strip()
+    
+    # Check if text already has bullet points or numbered items
+    has_bullets = any(line.strip().startswith(('•', '-', '*', '1.', '2.', '3.')) for line in strategy_text.split('\n'))
+    
+    if has_bullets:
+        # Convert to the preferred bullet format
+        lines = strategy_text.split('\n')
+        formatted_text = ""
+        
+        # First, convert to plain text points
+        points = []
+        current_point = ""
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')):
+                # If starting a new point and we already have one, save it
+                if current_point:
+                    points.append(current_point)
+                
+                # Extract the text after the bullet/number
+                if line.startswith(('1.', '2.', '3.', '4.', '5.')):
+                    current_point = line.split('.', 1)[1].strip()
+                else:
+                    current_point = line[1:].strip()
+            else:
+                # Continuation of current point
+                if current_point:
+                    current_point += " " + line
+                else:
+                    current_point = line
+        
+        # Add the last point if there is one
+        if current_point:
+            points.append(current_point)
+        
+        # Now format with the preferred style
+        if points:
+            formatted_text += "<ul class='strategy-bullet'>\n"
+            for point in points:
+                formatted_text += f"<li>{point}</li>\n"
+            formatted_text += "</ul>"
+        
+        return formatted_text
+    else:
+        # If no bullet points, split into paragraphs
+        paragraphs = [p for p in strategy_text.split('\n\n') if p.strip()]
+        
+        if len(paragraphs) > 1:
+            return "\n".join([f"<p>{p.replace('\n', ' ')}</p>" for p in paragraphs])
+        else:
+            # Look for line breaks and convert each line to a bullet point
+            lines = [line.strip() for line in strategy_text.split('\n') if line.strip()]
+            
+            if len(lines) > 1:
+                # Multiple lines - format as bullet points
+                formatted_text = "<ul class='strategy-bullet'>\n"
+                for line in lines:
+                    formatted_text += f"<li>{line}</li>\n"
+                formatted_text += "</ul>"
+                return formatted_text
+            else:
+                # Just one paragraph
+                return f"<p>{strategy_text}</p>"
+            
+def get_image_base64(image_path):
+    """
+    Convert an image file to base64 encoding for embedding in HTML.
+    
+    Parameters:
+    -----------
+    image_path : str
+        Path to the image file
+        
+    Returns:
+    --------
+    str
+        Base64 encoded string of the image
+    """
+    import base64
+    try:
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+    except Exception as e:
+        print(f"Error loading image {image_path}: {str(e)}")
+        return None
 
+def save_default_waiting_images():
+    """
+    Generate and save default waiting images if the actual image files don't exist.
+    This ensures the app doesn't break if the image files are missing.
+    
+    Returns:
+    --------
+    tuple
+        (hero_image_path, villain_image_path)
+    """
+    import os
+    from PIL import Image, ImageDraw, ImageFont
+    
+    hero_path = "hero_response.png"
+    villain_path = "villain_response.png"
+    
+    # Create default images if they don't exist
+    if not os.path.exists(hero_path):
+        # Create a simple image with text
+        img = Image.new('RGB', (300, 150), color=(230, 242, 255))
+        d = ImageDraw.Draw(img)
+        try:
+            # Try to use a system font
+            font = ImageFont.truetype("Arial", 20)
+        except:
+            # Fallback to default
+            font = ImageFont.load_default()
+        
+        d.text((50, 75), "Hero thinking...", fill=(0, 0, 0), font=font)
+        img.save(hero_path)
+        print(f"Created default hero image at {hero_path}")
+    
+    if not os.path.exists(villain_path):
+        # Create a simple image with text
+        img = Image.new('RGB', (300, 150), color=(255, 230, 230))
+        d = ImageDraw.Draw(img)
+        try:
+            # Try to use a system font
+            font = ImageFont.truetype("Arial", 20)
+        except:
+            # Fallback to default
+            font = ImageFont.load_default()
+        
+        d.text((50, 75), "Villain thinking...", fill=(0, 0, 0), font=font)
+        img.save(villain_path)
+        print(f"Created default villain image at {villain_path}")
+    
+    return hero_path, villain_path
+
+# This function should be added to your jiu_jitsu_functions.py file
+
+def trim_video(input_path, output_path, start_time, end_time):
+    """
+    Trims a video file to the specified time range.
+    
+    Parameters:
+    -----------
+    input_path : str
+        Path to the input video file
+    output_path : str
+        Path where the trimmed video will be saved
+    start_time : float
+        Start time in seconds
+    end_time : float
+        End time in seconds
+        
+    Returns:
+    --------
+    bool
+        True if successful, False otherwise
+    """
+    import subprocess
+    import os
+    
+    try:
+        # Ensure the input file exists
+        if not os.path.exists(input_path):
+            print(f"Input file does not exist: {input_path}")
+            return False
+        
+        # Execute ffmpeg command to trim the video
+        # -ss specifies the start time, -to specifies the end time
+        # -c copy copies the streams without re-encoding (fast)
+        command = [
+            "ffmpeg",
+            "-i", input_path,
+            "-ss", str(start_time),
+            "-to", str(end_time),
+            "-c", "copy",   # Use copy to avoid re-encoding
+            "-y",           # Overwrite output file if it exists
+            output_path
+        ]
+        
+        # Execute the command
+        process = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Check if command was successful
+        if process.returncode != 0:
+            print(f"Error trimming video: {process.stderr}")
+            return False
+            
+        # Verify the output file exists
+        if not os.path.exists(output_path):
+            print("Output file was not created")
+            return False
+            
+        print(f"Video trimmed successfully to {output_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Exception while trimming video: {str(e)}")
+        return False
+
+def get_video_duration(video_path):
+    """
+    Gets the duration of a video file in seconds.
+    
+    Parameters:
+    -----------
+    video_path : str
+        Path to the video file
+        
+    Returns:
+    --------
+    float
+        Duration in seconds, or None if an error occurs
+    """
+    import subprocess
+    import json
+    
+    try:
+        # Use ffprobe to get video metadata
+        command = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json",
+            video_path
+        ]
+        
+        # Execute the command
+        process = subprocess.run(
+            command, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Check if command was successful
+        if process.returncode != 0:
+            print(f"Error getting video duration: {process.stderr}")
+            return None
+        
+        # Parse the JSON output
+        output = json.loads(process.stdout)
+        duration = float(output["format"]["duration"])
+        
+        return duration
+        
+    except Exception as e:
+        print(f"Exception while getting video duration: {str(e)}")
+        return None
+
+def generate_video_thumbnail(video_path, thumbnail_path, time_position=1.0):
+    """
+    Extracts a thumbnail from a video at the specified time position.
+    
+    Parameters:
+    -----------
+    video_path : str
+        Path to the video file
+    thumbnail_path : str
+        Path where the thumbnail will be saved
+    time_position : float
+        Time position in seconds to extract the thumbnail
+        
+    Returns:
+    --------
+    bool
+        True if successful, False otherwise
+    """
+    import subprocess
+    import os
+    
+    try:
+        # Execute ffmpeg command to extract the frame
+        command = [
+            "ffmpeg",
+            "-i", video_path,
+            "-ss", str(time_position),  # Seek to this position
+            "-frames:v", "1",           # Extract one frame
+            "-q:v", "2",                # High quality JPEG
+            "-y",                       # Overwrite output file if it exists
+            thumbnail_path
+        ]
+        
+        # Execute the command
+        process = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Check if command was successful
+        if process.returncode != 0:
+            print(f"Error generating thumbnail: {process.stderr}")
+            return False
+            
+        # Verify the output file exists
+        if not os.path.exists(thumbnail_path):
+            print("Thumbnail was not created")
+            return False
+            
+        print(f"Thumbnail generated successfully at {thumbnail_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Exception while generating thumbnail: {str(e)}")
+        return False
+
+def format_strategy_content(content):
+    """
+    Format strategy content with proper bullet points.
+    
+    Parameters:
+    -----------
+    content : str
+        The content to format
+        
+    Returns:
+    --------
+    str
+        HTML formatted content
+    """
+    # Format bullet points if needed
+    if any(line.strip().startswith(('•', '-', '*', '1.', '2.', '3.')) for line in content.split('\n')):
+        formatted_content = "<ul class='strategy-bullet'>"
+        for line in content.split('\n'):
+            line = line.strip()
+            if line and line.startswith(('•', '-', '*', '1.', '2.', '3.')):
+                # Extract text after the bullet
+                if line.startswith(('1.', '2.', '3.')):
+                    text = line.split('.', 1)[1].strip()
+                else:
+                    text = line[1:].strip()
+                formatted_content += f"<li>{text}</li>"
+        formatted_content += "</ul>"
+    else:
+        # Handle regular text
+        formatted_content = "<p>" + content.replace('\n\n', '</p><p>').replace('\n', '<br>') + "</p>"
+    
+    return formatted_content

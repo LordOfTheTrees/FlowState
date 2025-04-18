@@ -23,7 +23,13 @@ try:
         get_attributes,
         adversarial_game_plan,
         format_strategy_for_display,
-        display_strategy_battle
+        display_strategy_battle,
+        get_image_base64,
+        save_default_waiting_images,
+        format_strategy_content,
+        trim_video,
+        get_video_duration,
+        generate_video_thumbnail,     
     )    
     from genai import GenAI
     from movieai import MovieAI
@@ -733,20 +739,6 @@ elif st.session_state.app_function == "FLOW Chart Generator":
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"An error occurred: {str(e)}")
-            
-            # Action buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Chat with Master", key="flow_to_master"):
-                    # Switch to Master Talk
-                    st.session_state.app_function = "Master Talk"
-                    st.rerun()
-            
-            with col2:
-                if st.button("Analyze Video", key="flow_to_video"):
-                    # Switch to Video Analysis
-                    st.session_state.app_function = "Video Match Analysis"
-                    st.rerun()
                 
         # Counter Strategy Tab
         with tab2:
@@ -758,10 +750,10 @@ elif st.session_state.app_function == "FLOW Chart Generator":
             counter_isMMA = counter_rules == "Unified MMA"
             
             counter_position = st.text_input("Starting Counter Position", 
-                                         placeholder="e.g., Defensive Guard, Counter to Side Control")
+                                        value = st.session_state.flow_position if st.session_state.flow_position else "",
+                                        placeholder="e.g., Defensive Guard, Counter to Side Control")
             
             counter_attributes = st.text_area("Counter Athlete Attributes", 
-                                         value=st.session_state.current_attributes,
                                          placeholder="Physical attributes of the counter athlete")
             
             counter_ideas = st.text_area("Counter Strategy Ideas", 
@@ -816,6 +808,8 @@ elif st.session_state.app_function == "FLOW Chart Generator":
                 except Exception as e:
                     st.error(f"Error rendering counter flow chart: {str(e)}")
 
+# Replace the existing Video Match Analysis section with this enhanced version
+
 # Function: Video Match Analysis
 elif st.session_state.app_function == "Video Match Analysis":
     st.title("Video Match Analysis")
@@ -825,19 +819,6 @@ elif st.session_state.app_function == "Video Match Analysis":
                                type=['mp4', 'mov', 'avi'],
                                key="video_match_uploader")
     
-    # Master selection for video analysis
-    masters = load_masters()
-    selected_master = st.selectbox("Select a Jiu-Jitsu Master for analysis", masters, index=0)
-    
-    # Additional options
-    col1, col2 = st.columns(2)
-    with col1:
-        max_frames = st.slider("Max frames to analyze", min_value=5, max_value=20, value=10, 
-                              help="Higher values provide more detailed analysis but may take longer")
-    with col2:
-        rules = st.selectbox("Ruleset", ["IBJJF (Sport Jiu-Jitsu)", "Unified MMA"])
-        isMMA = "MMA" in rules
-    
     if uploaded_file is not None:
         # Save the video temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
@@ -846,9 +827,131 @@ elif st.session_state.app_function == "Video Match Analysis":
         
         # Update session state
         st.session_state.current_video = video_path
+        st.session_state.video_filename = uploaded_file.name
         
-        # Display the video
-        st.video(video_path)
+        # Get video duration for the slider
+        video_duration = get_video_duration(video_path)
+        if not video_duration:
+            video_duration = 300  # Default to 5 minutes if duration can't be determined
+        
+        # Generate thumbnail
+        thumbnail_path = video_path + ".jpg"
+        thumbnail_generated = generate_video_thumbnail(video_path, thumbnail_path)
+        
+        # Display video details
+        video_container = st.container()
+        with video_container:
+            # Create two columns - one for the video/thumbnail, one for trimming controls
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Display original video
+                st.subheader("Original Video")
+                st.video(video_path)
+                
+                if thumbnail_generated:
+                    st.image(thumbnail_path, width=300, caption="Video Thumbnail")
+            
+            with col2:
+                st.subheader("Trim Video")
+                
+                # Time selection sliders
+                st.markdown("**Select portion to analyze:**")
+                
+                # Round up to nearest minute for max value display
+                max_duration_minutes = int((video_duration + 59) // 60)
+                
+                # Initialize trim values in session state if not exist
+                if 'trim_start' not in st.session_state:
+                    st.session_state.trim_start = 0.0
+                if 'trim_end' not in st.session_state:
+                    st.session_state.trim_end = min(video_duration, 60.0)  # Default to first minute or full video
+                
+                # Format time as MM:SS for display
+                def format_time(seconds):
+                    minutes = int(seconds // 60)
+                    secs = int(seconds % 60)
+                    return f"{minutes:02d}:{secs:02d}"
+                
+                # Label with current time values
+                st.markdown(f"**Current selection:** {format_time(st.session_state.trim_start)} to {format_time(st.session_state.trim_end)}")
+                
+                # Create sliders for selecting start and end times
+                trim_start = st.slider(
+                    "Start Time (seconds)", 
+                    min_value=0.0, 
+                    max_value=video_duration,
+                    value=st.session_state.trim_start,
+                    step=1.0,
+                    format="%.1f s",
+                    key="trim_start_slider"
+                )
+                
+                trim_end = st.slider(
+                    "End Time (seconds)", 
+                    min_value=trim_start + 1.0,  # Ensure end time is after start time
+                    max_value=video_duration,
+                    value=max(trim_start + 1.0, st.session_state.trim_end),
+                    step=1.0,
+                    format="%.1f s",
+                    key="trim_end_slider"
+                )
+                
+                # Update session state
+                st.session_state.trim_start = trim_start
+                st.session_state.trim_end = trim_end
+                
+                # Display selected duration
+                selected_duration = trim_end - trim_start
+                st.info(f"Selected duration: {format_time(selected_duration)}")
+                
+                # Trim button
+                if 'trimmed_video' not in st.session_state:
+                    st.session_state.trimmed_video = None
+                
+                if st.button("Trim Video"):
+                    with st.spinner("Trimming video..."):
+                        # Create output path
+                        trimmed_path = f"{video_path}_trimmed.mp4"
+                        
+                        # Call the trim function
+                        success = trim_video(video_path, trimmed_path, trim_start, trim_end)
+                        
+                        if success:
+                            st.session_state.trimmed_video = trimmed_path
+                            st.success("Video trimmed successfully!")
+                            st.rerun()  # Rerun to update UI
+                        else:
+                            st.error("Failed to trim video. Please check the logs for details.")
+        
+        # Display trimmed video if it exists
+        if st.session_state.trimmed_video and os.path.exists(st.session_state.trimmed_video):
+            st.subheader("Trimmed Video")
+            st.video(st.session_state.trimmed_video)
+            
+            # Use this video for analysis
+            analysis_video = st.session_state.trimmed_video
+            st.success("Analysis will be performed on the trimmed video.")
+        else:
+            # Use original video for analysis
+            analysis_video = video_path
+            if 'trimmed_video' in st.session_state and st.session_state.trimmed_video:
+                st.warning("Trimmed video not found. Analysis will be performed on the original video.")
+                st.session_state.trimmed_video = None
+        
+        # Master selection for video analysis
+        st.subheader("Analysis Configuration")
+        masters = load_masters()
+        selected_master = st.selectbox("Select a Jiu-Jitsu Master for analysis", masters, index=0)
+        
+        # Additional options
+        col1, col2 = st.columns(2)
+        with col1:
+            max_frames = st.slider("Max frames to analyze", min_value=5, max_value=20, value=10, 
+                                  help="Higher values provide more detailed analysis but may take longer")
+        with col2:
+            rules = st.selectbox("Ruleset", ["IBJJF (Sport Jiu-Jitsu)", "Unified MMA"])
+            isMMA = "MMA" in rules
         
         # Custom perspective options
         st.markdown("### Analysis Focus")
@@ -876,7 +979,7 @@ elif st.session_state.app_function == "Video Match Analysis":
                         movie_ai = MovieAI(os.environ.get("OPENAI_API_KEY"))
                         
                         # Extract a frame for the athlete attributes
-                        base64Frames, nframes, fps = movie_ai.extract_frames(video_path, max_samples=1)
+                        base64Frames, nframes, fps = movie_ai.extract_frames(analysis_video, max_samples=1)
                         
                         if base64Frames:
                             # Save the frame as an image
@@ -909,20 +1012,29 @@ elif st.session_state.app_function == "Video Match Analysis":
                         master_prompt = f"You are {selected_master}, a renowned jiu-jitsu master. "
                         master_prompt += f"Analyze this {match_type} match focusing on {player_variable}. "
                         master_prompt += "Give specific, actionable feedback in your unique teaching style. "
-                        master_prompt += "Focus on technique details, strategic advice, and common mistakes. "
+                        master_prompt += "Focus on technique details, strategic advice, and mistakes from the frames "
                         
                         if context:
                             master_prompt +=f"Pay special attention to: {context}. "
                         
                         # Generate the video analysis
                         analysis = movie_ai.generate_video_description(
-                            video_path, 
+                            analysis_video, 
                             master_prompt,
                             max_samples=max_frames
                         )
                         
                         # Display analysis results
                         st.markdown("## Master's Analysis")
+                        
+                        # Display video info
+                        video_info = "Original Video" if analysis_video == video_path else "Trimmed Video"
+                        if 'trim_start' in st.session_state and 'trim_end' in st.session_state and analysis_video != video_path:
+                            start_time = format_time(st.session_state.trim_start)
+                            end_time = format_time(st.session_state.trim_end)
+                            video_info += f" ({start_time} - {end_time})"
+                        
+                        st.markdown(f"*Analysis based on: {video_info}*")
                         
                         # Format the analysis as coming from the selected master
                         formatted_analysis = f"""
@@ -942,7 +1054,8 @@ elif st.session_state.app_function == "Video Match Analysis":
                     with st.expander("View error details"):
                         st.code(f"Error: {str(e)}")
 
-# Function: Anime OODA Analysis using adversarial prompts
+# Updated Anime OODA Analysis section with larger waiting images that only appear after button press
+
 elif st.session_state.app_function == "Anime OODA Analysis":
     st.title("Anime OODA Analysis")
     
@@ -951,6 +1064,17 @@ elif st.session_state.app_function == "Anime OODA Analysis":
         st.session_state.left_column_history = []
     if 'right_column_history' not in st.session_state:
         st.session_state.right_column_history = []
+    
+    # Track which side is waiting for a response
+    if 'left_waiting' not in st.session_state:
+        st.session_state.left_waiting = False
+    if 'right_waiting' not in st.session_state:
+        st.session_state.right_waiting = False
+    
+    # Initialize waiting images
+    if 'waiting_images_initialized' not in st.session_state:
+        save_default_waiting_images()
+        st.session_state.waiting_images_initialized = True
     
     # User inputs for initial analysis
     position_variable = st.text_input("Enter the jiu-jitsu position")
@@ -982,7 +1106,7 @@ elif st.session_state.app_function == "Anime OODA Analysis":
                     prompt = f"Generate a detailed jiu-jitsu strategy for an athlete with the following attributes: {st.session_state.current_attributes}. "
                     prompt += f"The starting position is {position_variable} under {match_type} rules. "
                     prompt += f"Additional context: {keywords}. "
-                    prompt += f"Format the response as a clear, concise strategy with 3-4 key points."
+                    prompt += f"Format the response as a clear, concise strategy with 3-4 key points. no more than 6 bullets"
                     
                     # Generate the strategy
                     initial_strategy = genai.generate_text(prompt)
@@ -1004,122 +1128,295 @@ elif st.session_state.app_function == "Anime OODA Analysis":
                         "athlete": st.session_state.current_attributes
                     })
                     
+                    # Reset waiting states
+                    st.session_state.left_waiting = False
+                    st.session_state.right_waiting = False
+                    
                     # Force a rerun to show the columns
                     st.rerun()
                     
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
     
-    # Display the dueling columns if we have an initial strategy
+    # Display the strategy battle if we have an initial strategy
     if len(st.session_state.left_column_history) > 0:
         st.markdown("### Strategy Battle")
         
-        # Create two columns
-        col1, col2 = st.columns(2)
+        # Create two columns for the headers
+        header_col1, header_col2 = st.columns(2)
         
-        # Display conversation history in left column
-        with col1:
+        with header_col1:
             st.markdown("#### Initiator Strategy")
-            for entry in st.session_state.left_column_history:
-                st.markdown(f'<div class="highlight">{entry["content"]}</div>', unsafe_allow_html=True)
-            
-            # Button to generate counter to right column's last move
-            if len(st.session_state.right_column_history) > 0:
-                if st.button("But I thought of that...", key="left_counter"):
-                    with st.spinner("Generating counter-strategy..."):
-                        try:
-                            # Get the last move from the right column
-                            last_right_move = st.session_state.right_column_history[-1]["content"]
-                            
-                            # Generate a counter using adversarial_game_plan
-                            counter_plan = adversarial_game_plan(
-                                last_right_move,
-                                ruleset=ruleset,
-                                position=position_variable,
-                                measurables=st.session_state.current_attributes
-                            )
-                            
-                            # Clean up the response if needed
-                            if "DEBUG INFO:" in counter_plan and "RESPONSE:" in counter_plan:
-                                counter_plan = counter_plan.split("RESPONSE:")[1].strip()
-                            
-                            # Ensure it's brief (3 bullet points max)
-                            api_key = os.environ.get("OPENAI_API_KEY", "")
-                            genai = GenAI(api_key)
-                            
-                            brief_prompt = f"Condense the following counter-strategy into 3 brief bullet points, focus on the most important aspects:\n\n{counter_plan}"
-                            brief_counter = genai.generate_text(brief_prompt)
-                            
-                            if "[Debug:" in brief_counter:
-                                brief_counter = brief_counter.split("[Debug:")[0].strip()
-                            
-                            # Add to left column history
-                            st.session_state.left_column_history.append({
-                                "role": "initiator",
-                                "content": brief_counter,
-                                "position": position_variable,
-                                "ruleset": ruleset,
-                                "athlete": st.session_state.current_attributes
-                            })
-                            
-                            # Force a rerun to update the display
-                            st.rerun()
-                            
-                        except Exception as e:
-                            st.error(f"An error occurred: {str(e)}")
         
-        # Display conversation history in right column
-        with col2:
+        with header_col2:
             st.markdown("#### Defender Strategy")
-            for entry in st.session_state.right_column_history:
-                st.markdown(f'<div class="highlight">{entry["content"]}</div>', unsafe_allow_html=True)
+        
+        # Determine the maximum number of rows needed
+        max_rows = max(len(st.session_state.left_column_history), len(st.session_state.right_column_history))
+        
+        # Add an extra row if waiting for a response on either side
+        if st.session_state.left_waiting and len(st.session_state.left_column_history) == max_rows:
+            max_rows += 1
+        if st.session_state.right_waiting and len(st.session_state.right_column_history) == max_rows:
+            max_rows += 1
+        
+        # Loop through each row and create boxes
+        for i in range(max_rows):
+            # Create color class based on row index (cycle through 5 colors)
+            color_class = i % 5
             
-            # Button to generate counter to left column's last move
-            if st.button("But I thought of that...", key="right_counter"):
-                with st.spinner("Generating counter-strategy..."):
+            # Define background colors for different rows
+            bg_colors = [
+                "rgba(230, 242, 255, 0.7)",  # Light blue
+                "rgba(248, 238, 255, 0.7)",  # Light purple
+                "rgba(255, 242, 230, 0.7)",  # Light orange
+                "rgba(230, 255, 242, 0.7)",  # Light green
+                "rgba(255, 230, 230, 0.7)"   # Light red
+            ]
+            
+            # Create columns for this row
+            col1, col2 = st.columns(2)
+            
+            # Style for the boxes
+            box_style = f"""
+            <style>
+            .strategy-box-{i} {{
+                background-color: {bg_colors[color_class]};
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 15px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+                min-height: 200px;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+            }}
+            .strategy-bullet {{
+                list-style-type: disc;
+                padding-left: 20px;
+            }}
+            .strategy-bullet li {{
+                margin-bottom: 8px;
+            }}
+            .waiting-image {{
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 400px;
+            }}
+            .waiting-image img {{
+                max-width: 90%;
+                max-height: 400px;
+                object-fit: contain;
+            }}
+            </style>
+            """
+            
+            # Left column (Initiator)
+            with col1:
+                st.markdown(box_style, unsafe_allow_html=True)
+                
+                # Check if we have content for this row
+                if i < len(st.session_state.left_column_history):
+                    # Format the content properly
+                    content = st.session_state.left_column_history[i]["content"]
+                    
+                    # Format bullet points if needed
+                    formatted_content = format_strategy_content(content)
+                    
+                    st.markdown(f"<div class='strategy-box-{i}'>{formatted_content}</div>", unsafe_allow_html=True)
+                # Show waiting image if we're on the next row after existing content and left_waiting is True
+                elif i == len(st.session_state.left_column_history) and st.session_state.left_waiting:
+                    # Display loading image
                     try:
-                        # Get the last move from the left column
-                        last_left_move = st.session_state.left_column_history[-1]["content"]
+                        hero_img_base64 = get_image_base64("hero_response.png")
+                        if hero_img_base64:
+                            hero_img_tag = f'<img src="data:image/png;base64,{hero_img_base64}" alt="Hero thinking...">'
+                        else:
+                            hero_img_tag = '<p style="text-align: center; font-size: 20px;">Hero thinking...</p>'
+                    except:
+                        hero_img_tag = '<p style="text-align: center; font-size: 20px;">Hero thinking...</p>'
                         
-                        # Generate a counter using adversarial_game_plan
-                        counter_plan = adversarial_game_plan(
-                            last_left_move,
-                            ruleset=ruleset,
-                            position=position_variable,
-                            measurables="Opponent with similar build, but specialty in defensive techniques"
-                        )
+                    st.markdown(f"""
+                    <div class='strategy-box-{i}'>
+                        <div class='waiting-image'>{hero_img_tag}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Empty box for alignment
+                    st.markdown(f"<div class='strategy-box-{i}'></div>", unsafe_allow_html=True)
+            
+            # Right column (Defender)
+            with col2:
+                # Check if we have content for this row
+                if i < len(st.session_state.right_column_history):
+                    # Format the content properly
+                    content = st.session_state.right_column_history[i]["content"]
+                    
+                    # Format bullet points if needed
+                    formatted_content = format_strategy_content(content)
+                    
+                    st.markdown(f"<div class='strategy-box-{i}'>{formatted_content}</div>", unsafe_allow_html=True)
+                # Show waiting image if we're on the next row after existing content and right_waiting is True
+                elif i == len(st.session_state.right_column_history) and st.session_state.right_waiting:
+                    # Display loading image
+                    try:
+                        villain_img_base64 = get_image_base64("villain_response.png")
+                        if villain_img_base64:
+                            villain_img_tag = f'<img src="data:image/png;base64,{villain_img_base64}" alt="Villain thinking...">'
+                        else:
+                            villain_img_tag = '<p style="text-align: center; font-size: 20px;">Villain thinking...</p>'
+                    except:
+                        villain_img_tag = '<p style="text-align: center; font-size: 20px;">Villain thinking...</p>'
                         
-                        # Clean up the response if needed
-                        if "DEBUG INFO:" in counter_plan and "RESPONSE:" in counter_plan:
-                            counter_plan = counter_plan.split("RESPONSE:")[1].strip()
-                        
-                        # Ensure it's brief (3 bullet points max)
-                        api_key = os.environ.get("OPENAI_API_KEY", "")
-                        genai = GenAI(api_key)
-                        
-                        brief_prompt = f"Condense the following counter-strategy into 3 brief bullet points, focus on the most important aspects:\n\n{counter_plan}"
-                        brief_counter = genai.generate_text(brief_prompt)
-                        
-                        if "[Debug:" in brief_counter:
-                            brief_counter = brief_counter.split("[Debug:")[0].strip()
-                        
-                        # Add to right column history
-                        st.session_state.right_column_history.append({
-                            "role": "defender",
-                            "content": brief_counter,
-                            "position": position_variable,
-                            "ruleset": ruleset,
-                            "athlete": "Opponent with similar build, but specialty in defensive techniques"
-                        })
-                        
-                        # Force a rerun to update the display
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
+                    st.markdown(f"""
+                    <div class='strategy-box-{i}'>
+                        <div class='waiting-image'>{villain_img_tag}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Empty box for alignment
+                    st.markdown(f"<div class='strategy-box-{i}'></div>", unsafe_allow_html=True)
+        
+        # Add buttons for generating counter strategies
+        button_col1, button_col2 = st.columns(2)
+        
+        # Left column button (Initiator)
+        with button_col1:
+            # Only show the button if there's a defender strategy to counter and not already waiting
+            button_disabled = len(st.session_state.right_column_history) == 0 or st.session_state.left_waiting
+            if st.button("But I thought of that...", key="left_counter", disabled=button_disabled):
+                # Set waiting state immediately
+                st.session_state.left_waiting = True
+                st.rerun()  # Rerun to show the waiting image
+        
+        # Right column button (Defender)
+        with button_col2:
+            # Only enable if not already waiting
+            button_disabled = st.session_state.right_waiting
+            if st.button("But I thought of that...", key="right_counter", disabled=button_disabled):
+                # Set waiting state immediately
+                st.session_state.right_waiting = True
+                st.rerun()  # Rerun to show the waiting image
+        
+        # Process the waiting states if needed
+        if st.session_state.left_waiting:
+            with st.spinner("Generating hero counter-strategy..."):
+                try:
+                    # Get the last move from the right column
+                    last_right_move = st.session_state.right_column_history[-1]["content"]
+                    
+                    # Generate a counter using adversarial_game_plan
+                    counter_plan = adversarial_game_plan(
+                        last_right_move,
+                        ruleset=ruleset,
+                        position=position_variable,
+                        measurables=st.session_state.current_attributes
+                    )
+                    
+                    # Clean up the response if needed
+                    if "DEBUG INFO:" in counter_plan and "RESPONSE:" in counter_plan:
+                        counter_plan = counter_plan.split("RESPONSE:")[1].strip()
+                    
+                    # Format as bullet points
+                    api_key = os.environ.get("OPENAI_API_KEY", "")
+                    genai = GenAI(api_key)
+                    
+                    format_prompt = f"""
+                    Format the following counter-strategy into 3 clear bullet points (using • bullet format).
+                    Keep each bullet point concise and action-oriented.
+                    Do not use asterisks (*) or dashes (-).
+                    
+                    Counter strategy to format:
+                    {counter_plan}
+                    """
+                    
+                    formatted_counter = genai.generate_text(format_prompt)
+                    
+                    if "[Debug:" in formatted_counter:
+                        formatted_counter = formatted_counter.split("[Debug:")[0].strip()
+                    
+                    # Add to left column history
+                    st.session_state.left_column_history.append({
+                        "role": "initiator",
+                        "content": formatted_counter,
+                        "position": position_variable,
+                        "ruleset": ruleset,
+                        "athlete": st.session_state.current_attributes
+                    })
+                    
+                    # Reset waiting state
+                    st.session_state.left_waiting = False
+                    
+                    # Force a rerun to update the display
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
+                    # Reset waiting state in case of error
+                    st.session_state.left_waiting = False
+        
+        if st.session_state.right_waiting:
+            with st.spinner("Generating villain counter-strategy..."):
+                try:
+                    # Get the last move from the left column
+                    last_left_move = st.session_state.left_column_history[-1]["content"]
+                    
+                    # Generate a counter using adversarial_game_plan
+                    counter_plan = adversarial_game_plan(
+                        last_left_move,
+                        ruleset=ruleset,
+                        position=position_variable,
+                        measurables="Opponent with similar build, but specialty in defensive techniques"
+                    )
+                    
+                    # Clean up the response if needed
+                    if "DEBUG INFO:" in counter_plan and "RESPONSE:" in counter_plan:
+                        counter_plan = counter_plan.split("RESPONSE:")[1].strip()
+                    
+                    # Format as bullet points
+                    api_key = os.environ.get("OPENAI_API_KEY", "")
+                    genai = GenAI(api_key)
+                    
+                    format_prompt = f"""
+                    Format the following counter-strategy into 3 clear bullet points (using • bullet format).
+                    Keep each bullet point concise and action-oriented.
+                    Do not use asterisks (*) or dashes (-).
+                    
+                    Counter strategy to format:
+                    {counter_plan}
+                    """
+                    
+                    formatted_counter = genai.generate_text(format_prompt)
+                    
+                    if "[Debug:" in formatted_counter:
+                        formatted_counter = formatted_counter.split("[Debug:")[0].strip()
+                    
+                    # Add to right column history
+                    st.session_state.right_column_history.append({
+                        "role": "defender",
+                        "content": formatted_counter,
+                        "position": position_variable,
+                        "ruleset": ruleset,
+                        "athlete": "Opponent with similar build, but specialty in defensive techniques"
+                    })
+                    
+                    # Reset waiting state
+                    st.session_state.right_waiting = False
+                    
+                    # Force a rerun to update the display
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
+                    # Reset waiting state in case of error
+                    st.session_state.right_waiting = False
         
         # Add a reset button at the bottom
         if st.button("Reset Battle", key="reset_battle"):
             st.session_state.left_column_history = []
             st.session_state.right_column_history = []
+            st.session_state.left_waiting = False
+            st.session_state.right_waiting = False
             st.rerun()
+# End of Anime OODA Analysis section
