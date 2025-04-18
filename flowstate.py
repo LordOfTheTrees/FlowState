@@ -978,32 +978,61 @@ elif st.session_state.app_function == "Video Match Analysis":
                     if 'OPENAI_API_KEY' in os.environ:
                         movie_ai = MovieAI(os.environ.get("OPENAI_API_KEY"))
                         
-                        # Extract a frame for the athlete attributes
-                        base64Frames, nframes, fps = movie_ai.extract_frames(analysis_video, max_samples=1)
+                        # Get either the trimmed video or the original for analysis
+                        analysis_video = None
+                        if st.session_state.trimmed_video and os.path.exists(st.session_state.trimmed_video):
+                            analysis_video = st.session_state.trimmed_video
+                            st.success("Analysis will be performed on the trimmed video.")
+                        else:
+                            analysis_video = video_path
+                            if 'trimmed_video' in st.session_state and st.session_state.trimmed_video:
+                                st.warning("Trimmed video not available. Analysis will be performed on the original video.")
+                            
+                        # Create a progress bar
+                        progress_bar = st.progress(0)
+                        st.info("Step 1/4: Extracting frames from video...")
                         
+                        # Try to extract at least one frame for the athlete attributes
+                        base64Frames = []
+                        try:
+                            base64Frames, nframes, fps = movie_ai.extract_frames(analysis_video, max_samples=1)
+                            progress_bar.progress(25)
+                        except Exception as frame_err:
+                            st.warning(f"Could not extract video frames, but continuing with analysis: {str(frame_err)}")
+                        
+                        # If we have frames, save one and try to get attributes
                         if base64Frames:
-                            # Save the frame as an image
-                            image_data = base64.b64decode(base64Frames[0])
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as img_file:
-                                img_file.write(image_data)
-                                frame_path = img_file.name
-                            
-                            # Update session state
-                            st.session_state.current_image = frame_path
-                            st.success("Extracted frame from video for reference")
-                            
-                            # Try to get attributes (catch exceptions to prevent stopping the analysis)
+                            st.info("Step 2/4: Analyzing athlete attributes...")
                             try:
-                                attributes = get_attributes(frame_path, player_variable)
+                                # Save the frame as an image
+                                image_data = base64.b64decode(base64Frames[0])
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as img_file:
+                                    img_file.write(image_data)
+                                    frame_path = img_file.name
                                 
-                                # Clean up the response if needed
-                                if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
-                                    attributes = attributes.split("RESPONSE:")[1].strip()
+                                # Update session state
+                                st.session_state.current_image = frame_path
                                 
-                                st.session_state.current_attributes = attributes
-                            except Exception as attr_e:
-                                st.warning(f"Could not analyze detailed attributes: {str(attr_e)}")
-                                st.session_state.current_attributes = "Experienced jiu-jitsu practitioner"
+                                # Try to get attributes (catch exceptions to prevent stopping the analysis)
+                                try:
+                                    attributes = get_attributes(frame_path, player_variable)
+                                    
+                                    # Clean up the response if needed
+                                    if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
+                                        attributes = attributes.split("RESPONSE:")[1].strip()
+                                    
+                                    st.session_state.current_attributes = attributes
+                                except Exception as attr_e:
+                                    st.warning(f"Could not analyze detailed attributes, using defaults: {str(attr_e)}")
+                                    st.session_state.current_attributes = "Experienced jiu-jitsu practitioner"
+                            except Exception as img_e:
+                                st.warning(f"Could not save extracted frame: {str(img_e)}")
+                        
+                        # Progress update
+                        progress_bar.progress(50)
+                        
+                        # Proceed with analysis regardless of whether we got frames or not
+                        st.info("Step 3/4: Creating analysis query...")
                         
                         # Build the analysis prompt for the video
                         match_type = "MMA" if isMMA else "IBJJF sport jiu-jitsu"
@@ -1012,17 +1041,74 @@ elif st.session_state.app_function == "Video Match Analysis":
                         master_prompt = f"You are {selected_master}, a renowned jiu-jitsu master. "
                         master_prompt += f"Analyze this {match_type} match focusing on {player_variable}. "
                         master_prompt += "Give specific, actionable feedback in your unique teaching style. "
-                        master_prompt += "Focus on technique details, strategic advice, and mistakes from the frames "
+                        master_prompt += "Focus on technique details, strategic advice, and mistakes "
                         
                         if context:
-                            master_prompt +=f"Pay special attention to: {context}. "
+                            master_prompt += f"Pay special attention to: {context}. "
                         
-                        # Generate the video analysis
-                        analysis = movie_ai.generate_video_description(
-                            analysis_video, 
-                            master_prompt,
-                            max_samples=max_frames
-                        )
+                        progress_bar.progress(75)
+                        st.info("Step 4/4: Generating analysis...")
+                        
+                        # IMPORTANT: This is the part that needs to always run
+                        # Make the call to OpenAI directly instead of using movie_ai.generate_video_description
+                        # This ensures we get a response even if video processing failed
+                        
+                        try:
+                            # Try to use extracted frames if available
+                            if base64Frames:
+                                # Create a content array with the text prompt and frames
+                                content = [{"type": "text", "text": master_prompt}]
+                                
+                                # Add up to 3 frames if we have them (to avoid token limits)
+                                used_frames = base64Frames[:min(3, len(base64Frames))]
+                                for frame in used_frames:
+                                    content.append({
+                                        "type": "image_url",
+                                        "image_url": {"url": f"data:image/jpeg;base64,{frame}"}
+                                    })
+                                
+                                # Use the OpenAI API
+                                params = {
+                                    "model": "gpt-4o",
+                                    "messages": [{"role": "user", "content": content}],
+                                    "max_tokens": 1000
+                                }
+                                
+                            else:
+                                # No frames available, just use text prompt
+                                alternate_prompt = master_prompt + "\n\n"
+                                alternate_prompt += f"Note: I couldn't extract frames from the video for analysis, "
+                                alternate_prompt += f"but please provide general advice for a {match_type} match "
+                                alternate_prompt += f"focusing on {player_variable}. "
+                                
+                                if context:
+                                    alternate_prompt += f"Pay special attention to these aspects: {context}. "
+                                    
+                                params = {
+                                    "model": "gpt-4o",
+                                    "messages": [{"role": "user", "content": alternate_prompt}],
+                                    "max_tokens": 1000
+                                }
+                            
+                            # Make the API call
+                            if 'OPENAI_API_KEY' in os.environ:
+                                import openai
+                                client = openai.Client(api_key=os.environ.get("OPENAI_API_KEY"))
+                                completion = client.chat.completions.create(**params)
+                                analysis = completion.choices[0].message.content
+                            else:
+                                analysis = f"Error: OpenAI API Key not found. Master {selected_master} couldn't analyze the video."
+                                
+                        except Exception as api_err:
+                            st.error(f"Error calling OpenAI API: {str(api_err)}")
+                            analysis = f"Master {selected_master} says: I apologize, but I encountered a technical issue while analyzing your video. Here are some general tips for {match_type} matches focusing on {player_variable} position:\n\n"
+                            analysis += "1. Focus on maintaining proper posture and balance\n"
+                            analysis += "2. Control key grips and points of contact\n"
+                            analysis += "3. Always be aware of submission opportunities\n"
+                            analysis += "4. Practice transitions between positions regularly"
+                        
+                        # Complete the progress bar
+                        progress_bar.progress(100)
                         
                         # Display analysis results
                         st.markdown("## Master's Analysis")
@@ -1044,7 +1130,7 @@ elif st.session_state.app_function == "Video Match Analysis":
                         """
                         
                         st.markdown(formatted_analysis)
-                                                        
+                                
                     else:
                         st.error("OpenAI API Key is required for video analysis")
                         
