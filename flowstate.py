@@ -832,7 +832,7 @@ elif st.session_state.app_function == "Video Match Analysis":
         # Get video duration for the slider
         video_duration = get_video_duration(video_path)
         if not video_duration:
-            video_duration = 300  # Default to 5 minutes if duration can't be determined
+            video_duration = 300.0  # Default to 5 minutes if duration can't be determined
         
         # Generate thumbnail
         thumbnail_path = video_path + ".jpg"
