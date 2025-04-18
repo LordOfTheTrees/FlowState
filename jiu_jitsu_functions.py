@@ -2152,9 +2152,10 @@ def save_default_waiting_images():
     
     return hero_path, villain_path
 
+# This function should be added to your jiu_jitsu_functions.py file
 def trim_video(input_path, output_path, start_time, end_time):
     """
-    Trims a video file to the specified time range using ffmpeg-python.
+    Trims a video file to the specified time range.
     
     Parameters:
     -----------
@@ -2174,63 +2175,27 @@ def trim_video(input_path, output_path, start_time, end_time):
     """
     import subprocess
     import os
-    import shutil
     
     try:
-        print(f"Attempting to trim video from {start_time} to {end_time} seconds")
-        
         # Ensure the input file exists
         if not os.path.exists(input_path):
             print(f"Input file does not exist: {input_path}")
             return False
         
-        # Try to locate ffmpeg
-        ffmpeg_cmd = None
-        for cmd in ["ffmpeg", "/usr/bin/ffmpeg", "/home/adminuser/.local/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
-            if shutil.which(cmd):
-                ffmpeg_cmd = cmd
-                print(f"Found ffmpeg at: {ffmpeg_cmd}")
-                break
-        
-        if not ffmpeg_cmd:
-            print("Could not find ffmpeg executable")
-            
-            # Try using the ffmpeg-python package directly
-            try:
-                import ffmpeg
-                
-                # Use ffmpeg-python library instead of command line
-                (
-                    ffmpeg
-                    .input(input_path, ss=start_time, to=end_time)
-                    .output(output_path, c='copy')
-                    .run(overwrite_output=True, quiet=True)
-                )
-                
-                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                    print(f"Successfully trimmed video using ffmpeg-python")
-                    return True
-                else:
-                    print("Failed to trim video with ffmpeg-python")
-                    return False
-                    
-            except Exception as ffmpeg_err:
-                print(f"Error using ffmpeg-python: {str(ffmpeg_err)}")
-                return False
-        
         # Execute ffmpeg command to trim the video
+        # -ss specifies the start time, -to specifies the end time
+        # -c copy copies the streams without re-encoding (fast)
         command = [
-            ffmpeg_cmd,
+            "ffmpeg",
             "-i", input_path,
             "-ss", str(start_time),
             "-to", str(end_time),
-            "-c", "copy",
-            "-y",  # Overwrite output file if it exists
+            "-c", "copy",   # Use copy to avoid re-encoding
+            "-y",           # Overwrite output file if it exists
             output_path
         ]
         
         # Execute the command
-        print(f"Running command: {' '.join(command)}")
         process = subprocess.run(
             command,
             stdout=subprocess.PIPE,
@@ -2248,106 +2213,11 @@ def trim_video(input_path, output_path, start_time, end_time):
             print("Output file was not created")
             return False
             
-        if os.path.getsize(output_path) == 0:
-            print("Output file was created but is empty")
-            return False
-            
         print(f"Video trimmed successfully to {output_path}")
         return True
         
     except Exception as e:
         print(f"Exception while trimming video: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def generate_video_thumbnail(video_path, thumbnail_path, time_position=1.0):
-    """
-    Extracts a thumbnail from a video at the specified time position.
-    
-    Parameters:
-    -----------
-    video_path : str
-        Path to the video file
-    thumbnail_path : str
-        Path where the thumbnail will be saved
-    time_position : float
-        Time position in seconds to extract the thumbnail
-        
-    Returns:
-    --------
-    bool
-        True if successful, False otherwise
-    """
-    import subprocess
-    import os
-    import shutil
-    
-    try:
-        # Try to locate ffmpeg
-        ffmpeg_cmd = None
-        for cmd in ["ffmpeg", "/usr/bin/ffmpeg", "/home/adminuser/.local/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
-            if shutil.which(cmd):
-                ffmpeg_cmd = cmd
-                break
-        
-        if not ffmpeg_cmd:
-            print("Could not find ffmpeg executable")
-            
-            # Try using the ffmpeg-python package directly
-            try:
-                import ffmpeg
-                
-                # Use ffmpeg-python library instead
-                (
-                    ffmpeg
-                    .input(video_path, ss=time_position)
-                    .output(thumbnail_path, vframes=1)
-                    .run(overwrite_output=True, quiet=True)
-                )
-                
-                if os.path.exists(thumbnail_path) and os.path.getsize(thumbnail_path) > 0:
-                    return True
-                else:
-                    return False
-                    
-            except Exception as ffmpeg_err:
-                print(f"Error using ffmpeg-python: {str(ffmpeg_err)}")
-                return False
-        
-        # Execute ffmpeg command to extract the frame
-        command = [
-            ffmpeg_cmd,
-            "-i", video_path,
-            "-ss", str(time_position),  # Seek to this position
-            "-frames:v", "1",           # Extract one frame
-            "-q:v", "2",                # High quality JPEG
-            "-y",                       # Overwrite output file if it exists
-            thumbnail_path
-        ]
-        
-        # Execute the command
-        process = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Check if command was successful
-        if process.returncode != 0:
-            print(f"Error generating thumbnail: {process.stderr}")
-            return False
-            
-        # Verify the output file exists
-        if not os.path.exists(thumbnail_path):
-            print("Thumbnail was not created")
-            return False
-            
-        return True
-        
-    except Exception as e:
-        print(f"Exception while generating thumbnail: {str(e)}")
         return False
 
 def get_video_duration(video_path):
@@ -2399,6 +2269,64 @@ def get_video_duration(video_path):
     except Exception as e:
         print(f"Exception while getting video duration: {str(e)}")
         return None
+
+def generate_video_thumbnail(video_path, thumbnail_path, time_position=1.0):
+    """
+    Extracts a thumbnail from a video at the specified time position.
+    
+    Parameters:
+    -----------
+    video_path : str
+        Path to the video file
+    thumbnail_path : str
+        Path where the thumbnail will be saved
+    time_position : float
+        Time position in seconds to extract the thumbnail
+        
+    Returns:
+    --------
+    bool
+        True if successful, False otherwise
+    """
+    import subprocess
+    import os
+    
+    try:
+        # Execute ffmpeg command to extract the frame
+        command = [
+            "ffmpeg",
+            "-i", video_path,
+            "-ss", str(time_position),  # Seek to this position
+            "-frames:v", "1",           # Extract one frame
+            "-q:v", "2",                # High quality JPEG
+            "-y",                       # Overwrite output file if it exists
+            thumbnail_path
+        ]
+        
+        # Execute the command
+        process = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Check if command was successful
+        if process.returncode != 0:
+            print(f"Error generating thumbnail: {process.stderr}")
+            return False
+            
+        # Verify the output file exists
+        if not os.path.exists(thumbnail_path):
+            print("Thumbnail was not created")
+            return False
+            
+        print(f"Thumbnail generated successfully at {thumbnail_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Exception while generating thumbnail: {str(e)}")
+        return False
 
 def format_strategy_content(content):
     """
