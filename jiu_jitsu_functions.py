@@ -1292,7 +1292,7 @@ def next_move(flow_chart, move_text, measurables, isMMA=True, favorite_ideas="")
     # Add context information to favorite_ideas to maintain coherence
     context_info = ""
     if context_nodes:
-        context_info = f"Connect to previously listed flow chart positions with the correct logical structure: {', '.join(context_nodes)}. "
+        context_info = f"Connect to previously listed flow chart positions with the correct logical structure. make sure that inital top or bottom position is preserved based on the connected positions: {', '.join(context_nodes)}. "
     
     enhanced_ideas = context_info + favorite_ideas
     
