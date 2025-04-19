@@ -123,10 +123,12 @@ def analyse_grappling_match(video, player_variable, isMMA=True, keywords="", sta
     except Exception as e:
         return f"Error analyzing grappling match: {str(e)}"
 
+
+
 def generate_flow_chart_with_start(measurables, starting_position, isMMA=True, favorite_ideas=""):
     """
     Generates a detailed Mermaid-based flow chart of jiu-jitsu moves with complex branching
-    and specific technical details, starting from a specific position.
+    starting from a specific position.
     
     Parameters:
     -----------
@@ -146,7 +148,6 @@ def generate_flow_chart_with_start(measurables, starting_position, isMMA=True, f
     """
     # Debug information
     debug_info = f"Function called with:\nmeasurables: {measurables}\nstarting_position: {starting_position}\nisMMA: {isMMA}\nfavorite_ideas: {favorite_ideas}\n"
-    debug_info += f"API Key set in environment: {'Yes' if os.environ.get('OPENAI_API_KEY') else 'No'}\n"
     
     try:
         # Get GenAI instance with explicit error handling
@@ -154,66 +155,36 @@ def generate_flow_chart_with_start(measurables, starting_position, isMMA=True, f
         if not api_key:
             return "Error: OpenAI API Key not found in environment variables"
         
-        debug_info += f"Creating GenAI instance with API key: {api_key[:5]}...\n"
         genai = GenAI(api_key)
         
-        # Create the prompt for flow chart generation with explicit starting position
+        # Create the prompt for flow chart generation
         match_type = "MMA" if isMMA else "IBJJF jiu-jitsu"
         
-        # Enhanced instructions for deeper technical details
-        technical_detail_instruction = """
-        For each transition:
-        - Specify exact grips (e.g., "Collar grip with right hand at opponent's left lapel")
-        - Describe specific weight shifts (e.g., "Shift weight to right hip while pulling down")
-        - Include key defensive considerations
-        - Note timing elements when relevant
-        
-        For positions:
-        - Be specific about body positioning (e.g., "Low mount with grapevines" instead of just "Mount")
-        - Include hand placement details
-        - Specify the exact variant of the position
-        """
-        
-        # Include or exclude striking based on ruleset with more detailed instructions
-        striking_instruction = ""
-        if isMMA:
-            striking_instruction = """
-            Include MMA-specific elements:
-            - At least one striking setup that creates an opening
-            - One ground-and-pound sequence with follow-ups
-            - Cage/wall wrestling tactics where appropriate
-            - Defensive transitions to avoid strikes
-            """
-        else:
-            striking_instruction = """
-            Focus on IBJJF-legal techniques only:
-            - Include competition-specific tactics
-            - Emphasize control positions that score points
-            - Include at least one sweep sequence with full details
-            - Include grip fighting details for competition scenarios
-            """
-        
-        prompt = f"""Generate a technically detailed Mermaid flow chart showing branching jiu-jitsu sequences.
+        # Simplified prompt that avoids providing a template example
+        prompt = f"""Generate a detailed Mermaid flow chart for jiu-jitsu techniques starting from {starting_position}.
 
-STARTING POSITION: {starting_position}
+REQUIREMENTS:
+1. Use "graph LR" for the layout
+2. Node A must be: "{starting_position}"
+3. Create at least 4-5 realistic transitions from the starting position
+4. Each transition should have 2-3 follow-up moves
+5. Include specific technical details for each transition
+6. Use {match_type} rules
+7. Do not use placeholder names like "Position 1" - use real jiu-jitsu positions and techniques
+8. Wrap all node text and arrow labels in double quotes
+9. ONLY return the Mermaid diagram code with no explanations
+10. Maximum of 16-20 nodes total (use the full complexity allowed)
 
-Important formatting requirements:
-1. ONLY return the Mermaid diagram code with no explanations
-2. Use "graph LR" for a circular/radial layout
-3. Use simple node IDs (A, B, C, etc.)
-4. PUT DOUBLE QUOTES around all node text and arrow labels
-5. Make the starting position node A and place it in the center of the chart
-6. Create transitions that branch outward with multiple follow-up paths
-7. Maximum of 16-20 nodes total (use the full complexity allowed)
+The athlete has these attributes: {measurables}
 
 The flow chart should have the following structure:
-- Position A (center/starting position) should branch out to 4-6 distinct intermediate positions
-- Each intermediate position should have 2-3 follow-up options
+- Position A (center/starting position) should branch out to 3-6 distinct intermediate positions before ending up at a main move or position
+- Each intermediate position should have 2-3 follow-up options, including submissions that end the chart
 - Include at least one detailed chain of 3-4 connected techniques
 - Include at least one reaction-based branch (if opponent does X, do Y)
-- Include specific grips and technical details in the transition labels
+- Include specific grips and technical details in the transition labels, making sure that all setps are listed before reaching the main move or position
 
-Example enhanced format. DO NOT USE anything from this exact example, but follow the same structure:
+Example enhanced format:
 ```
 graph LR
     A["{starting_position}"] -->|"Grip right lapel w/ left hand"| B["Deep half-guard control"]
@@ -239,32 +210,24 @@ graph LR
     J -->|"Control with hooks in"| P["Back mount with harness grip"]
 ```
 
-The athlete has these attributes: {measurables}
-
-{technical_detail_instruction}
-
-{striking_instruction}
-
-The flow chart should demonstrate advanced branching options from {starting_position}, with multiple technical pathways. 
-Each transition should contain specific technical details (not just generic actions).
-Use {match_type} rules appropriately.
 """
         
         if favorite_ideas:
-            prompt += f"\nIncorporate these specific techniques and ideas where technically sound: {favorite_ideas}"
-        
-        debug_info += f"Created prompt: {prompt[:100]}...\n"
-        
+            prompt += f"\nIncorporate these techniques: {favorite_ideas}"
+            
+        if isMMA:
+            prompt += "\nInclude at least one striking setup and one cage wrestling technique."
+        else:
+            prompt += "\nInclude only IBJJF-legal techniques with point-scoring positions."
+            
         # Generate the mermaid object
-        debug_info += "Calling generate_text...\n"
         mermaid_object = genai.generate_text(prompt)
-        debug_info += f"Response received from API: {mermaid_object[:100]}...\n"
         
-        # Remove any debug info or explanations
+        # Clean up the response
         if "[Debug:" in mermaid_object:
             mermaid_object = mermaid_object.split("[Debug:")[0].strip()
         
-        # If there are backticks in the response, extract just the code
+        # Extract just the code if wrapped in backticks
         if "```" in mermaid_object:
             code_parts = mermaid_object.split("```")
             for part in code_parts:
@@ -272,32 +235,24 @@ Use {match_type} rules appropriately.
                     mermaid_object = part.strip()
                     break
         
-        # Return a more complex default flowchart if the response doesn't contain valid mermaid syntax
-        if "graph" not in mermaid_object.lower():
-            # Create different default charts based on ruleset
-            if isMMA:
-                mermaid_object = f"""
-graph LR
-    A["{starting_position}"] -->|"THIS IS A DEFAULT GENERATION"| B["High Guard with Overhook"]
-    A -->|"Underhook & hip escape"| C["Deep Half-Guard Entry"]
-    
-"""
-            else:
-                mermaid_object = f"""
-graph LR
-    A["{starting_position}"] -->|"THIS IS A DEFAULT GENERATION"| B["Collar & Sleeve Guard"]
-    A -->|"Establish deep underhook"| C["Half-Guard with Underhook"]
-"""
-            debug_info += "Generated default complex mermaid flowchart (API response didn't contain valid mermaid)\n"
+        # Check if the starting position is in the chart
+        if starting_position not in mermaid_object:
+            return f"Error: Generated flowchart doesn't contain the starting position: '{starting_position}'"
+            
+        # Check if it contains generic placeholders
+        placeholders = ["Position 1", "Position 2", "Submission 1", "Submission 2", "Default Graph"]
+        for term in placeholders:
+            if term in mermaid_object:
+                return f"Error: Generated flowchart contains generic placeholder: '{term}'"
         
-        # Return both debug info and mermaid object during development
+        # Return the flowchart
         return f"DEBUG INFO:\n{debug_info}\n\nMERMAID:\n{mermaid_object}"
     
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        return f"Error generating flow chart:\n{debug_info}\n\nException: {str(e)}\n\nTraceback:\n{tb}"
-    
+        return f"Error generating flow chart: {str(e)}"
+
 def generate_flow_chart(measurables, position_variable="both", isMMA=True, favorite_ideas=""):
     """
     Generates a Mermaid-based radial flow chart of jiu-jitsu moves.
@@ -1975,10 +1930,9 @@ def save_default_waiting_images():
     
     return hero_path, villain_path
 
-
 def trim_video(input_path, output_path, start_time, end_time):
     """
-    Trims a video file to the specified time range using ffmpeg-python.
+    Trims a video file to the specified time range.
     
     Parameters:
     -----------
@@ -1998,63 +1952,27 @@ def trim_video(input_path, output_path, start_time, end_time):
     """
     import subprocess
     import os
-    import shutil
     
     try:
-        print(f"Attempting to trim video from {start_time} to {end_time} seconds")
-        
         # Ensure the input file exists
         if not os.path.exists(input_path):
             print(f"Input file does not exist: {input_path}")
             return False
         
-        # Try to locate ffmpeg
-        ffmpeg_cmd = None
-        for cmd in ["ffmpeg", "/usr/bin/ffmpeg", "/home/adminuser/.local/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
-            if shutil.which(cmd):
-                ffmpeg_cmd = cmd
-                print(f"Found ffmpeg at: {ffmpeg_cmd}")
-                break
-        
-        if not ffmpeg_cmd:
-            print("Could not find ffmpeg executable")
-            
-            # Try using the ffmpeg-python package directly
-            try:
-                import ffmpeg
-                
-                # Use ffmpeg-python library instead of command line
-                (
-                    ffmpeg
-                    .input(input_path, ss=start_time, to=end_time)
-                    .output(output_path, c='copy')
-                    .run(overwrite_output=True, quiet=True)
-                )
-                
-                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                    print(f"Successfully trimmed video using ffmpeg-python")
-                    return True
-                else:
-                    print("Failed to trim video with ffmpeg-python")
-                    return False
-                    
-            except Exception as ffmpeg_err:
-                print(f"Error using ffmpeg-python: {str(ffmpeg_err)}")
-                return False
-        
         # Execute ffmpeg command to trim the video
+        # -ss specifies the start time, -to specifies the end time
+        # -c copy copies the streams without re-encoding (fast)
         command = [
-            ffmpeg_cmd,
+            "ffmpeg",
             "-i", input_path,
             "-ss", str(start_time),
             "-to", str(end_time),
-            "-c", "copy",
-            "-y",  # Overwrite output file if it exists
+            "-c", "copy",   # Use copy to avoid re-encoding
+            "-y",           # Overwrite output file if it exists
             output_path
         ]
         
         # Execute the command
-        print(f"Running command: {' '.join(command)}")
         process = subprocess.run(
             command,
             stdout=subprocess.PIPE,
@@ -2072,106 +1990,11 @@ def trim_video(input_path, output_path, start_time, end_time):
             print("Output file was not created")
             return False
             
-        if os.path.getsize(output_path) == 0:
-            print("Output file was created but is empty")
-            return False
-            
         print(f"Video trimmed successfully to {output_path}")
         return True
         
     except Exception as e:
         print(f"Exception while trimming video: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def generate_video_thumbnail(video_path, thumbnail_path, time_position=1.0):
-    """
-    Extracts a thumbnail from a video at the specified time position.
-    
-    Parameters:
-    -----------
-    video_path : str
-        Path to the video file
-    thumbnail_path : str
-        Path where the thumbnail will be saved
-    time_position : float
-        Time position in seconds to extract the thumbnail
-        
-    Returns:
-    --------
-    bool
-        True if successful, False otherwise
-    """
-    import subprocess
-    import os
-    import shutil
-    
-    try:
-        # Try to locate ffmpeg
-        ffmpeg_cmd = None
-        for cmd in ["ffmpeg", "/usr/bin/ffmpeg", "/home/adminuser/.local/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
-            if shutil.which(cmd):
-                ffmpeg_cmd = cmd
-                break
-        
-        if not ffmpeg_cmd:
-            print("Could not find ffmpeg executable")
-            
-            # Try using the ffmpeg-python package directly
-            try:
-                import ffmpeg
-                
-                # Use ffmpeg-python library instead
-                (
-                    ffmpeg
-                    .input(video_path, ss=time_position)
-                    .output(thumbnail_path, vframes=1)
-                    .run(overwrite_output=True, quiet=True)
-                )
-                
-                if os.path.exists(thumbnail_path) and os.path.getsize(thumbnail_path) > 0:
-                    return True
-                else:
-                    return False
-                    
-            except Exception as ffmpeg_err:
-                print(f"Error using ffmpeg-python: {str(ffmpeg_err)}")
-                return False
-        
-        # Execute ffmpeg command to extract the frame
-        command = [
-            ffmpeg_cmd,
-            "-i", video_path,
-            "-ss", str(time_position),  # Seek to this position
-            "-frames:v", "1",           # Extract one frame
-            "-q:v", "2",                # High quality JPEG
-            "-y",                       # Overwrite output file if it exists
-            thumbnail_path
-        ]
-        
-        # Execute the command
-        process = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Check if command was successful
-        if process.returncode != 0:
-            print(f"Error generating thumbnail: {process.stderr}")
-            return False
-            
-        # Verify the output file exists
-        if not os.path.exists(thumbnail_path):
-            print("Thumbnail was not created")
-            return False
-            
-        return True
-        
-    except Exception as e:
-        print(f"Exception while generating thumbnail: {str(e)}")
         return False
 
 def get_video_duration(video_path):
@@ -2223,6 +2046,64 @@ def get_video_duration(video_path):
     except Exception as e:
         print(f"Exception while getting video duration: {str(e)}")
         return None
+
+def generate_video_thumbnail(video_path, thumbnail_path, time_position=1.0):
+    """
+    Extracts a thumbnail from a video at the specified time position.
+    
+    Parameters:
+    -----------
+    video_path : str
+        Path to the video file
+    thumbnail_path : str
+        Path where the thumbnail will be saved
+    time_position : float
+        Time position in seconds to extract the thumbnail
+        
+    Returns:
+    --------
+    bool
+        True if successful, False otherwise
+    """
+    import subprocess
+    import os
+    
+    try:
+        # Execute ffmpeg command to extract the frame
+        command = [
+            "ffmpeg",
+            "-i", video_path,
+            "-ss", str(time_position),  # Seek to this position
+            "-frames:v", "1",           # Extract one frame
+            "-q:v", "2",                # High quality JPEG
+            "-y",                       # Overwrite output file if it exists
+            thumbnail_path
+        ]
+        
+        # Execute the command
+        process = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Check if command was successful
+        if process.returncode != 0:
+            print(f"Error generating thumbnail: {process.stderr}")
+            return False
+            
+        # Verify the output file exists
+        if not os.path.exists(thumbnail_path):
+            print("Thumbnail was not created")
+            return False
+            
+        print(f"Thumbnail generated successfully at {thumbnail_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Exception while generating thumbnail: {str(e)}")
+        return False
 
 def format_strategy_content(content):
     """

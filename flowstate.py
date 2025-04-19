@@ -29,8 +29,7 @@ try:
         format_strategy_content,
         trim_video,
         get_video_duration,
-        generate_video_thumbnail,
-        extract_frames_from_range     
+        generate_video_thumbnail,     
     )    
     from genai import GenAI
     from movieai import MovieAI
@@ -709,50 +708,37 @@ elif st.session_state.app_function == "FLOW Chart Generator":
                             examples = ", ".join([f'"{node}"' for node in nodes[:3]])
                             st.markdown(f"*Examples from current chart: {examples}*")
                 
-                # Generate flow chart button
-                if st.button("Generate Flow Chart"):
-                    if not position_variable:
-                        st.error("Please enter a starting position")
+                if flow_button and chosen_next:
+                    # Check if the move exists in the flowchart
+                    found = False
+                    if st.session_state.current_flowchart:
+                        # Simple check if the node or line exists in the flowchart
+                        found = chosen_next.lower() in st.session_state.current_flowchart.lower()
+                    
+                    if not found:
+                        st.error("Osu! That move is not in the current flow chart. Try another move.")
                     else:
-                        with st.spinner("Generating flow chart..."):
+                        with st.spinner("Generating next flow..."):
                             try:
-                                # Use default athlete profile if no attributes are available
-                                athlete_profile = attributes if attributes else st.session_state.current_attributes
-                                if not athlete_profile or athlete_profile.strip() == "":
-                                    athlete_profile = "Average adult male jiu-jitsu practitioner with balanced build"
-                                
-                                # Generate flow chart with explicit starting position
-                                flow_chart = generate_flow_chart_with_start(
-                                    athlete_profile,
-                                    position_variable,
+                                # Generate next flow chart
+                                next_flowchart = next_move(
+                                    st.session_state.current_flowchart,
+                                    chosen_next,
+                                    st.session_state.current_attributes,
                                     isMMA,
                                     ideas
                                 )
                                 
-                                # Validate the flowchart before accepting it
-                                is_valid, message = validate_flowchart(flow_chart, position_variable)
+                                # Sanitize the flow chart to ensure it's valid mermaid syntax
+                                next_flowchart = sanitize_mermaid(next_flowchart)
                                 
-                                if is_valid:
-                                    # Sanitize the flow chart to ensure it's valid mermaid syntax
-                                    flow_chart = sanitize_mermaid(flow_chart)
-                                    
-                                    # Update session state
-                                    st.session_state.current_flowchart = flow_chart
-                                    
-                                    # Show success message
-                                    st.success(f"Successfully generated flow chart for '{position_variable}'")
-                                else:
-                                    st.error(f"Failed to generate a valid flow chart: {message}")
-                                    
-                                    # Show debugging info in an expander
-                                    with st.expander("Debug information"):
-                                        st.code(flow_chart)
-                                        st.text("The generated flowchart was detected as invalid or default.")
-                                        
+                                # Update session state
+                                st.session_state.current_flowchart = next_flowchart
+                                
+                                # Force a rerun to update the displayed chart
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"An error occurred: {str(e)}")
-                                import traceback
-                                st.code(traceback.format_exc())
                 
         # Counter Strategy Tab
         with tab2:
@@ -992,188 +978,51 @@ elif st.session_state.app_function == "Video Match Analysis":
                     if 'OPENAI_API_KEY' in os.environ:
                         movie_ai = MovieAI(os.environ.get("OPENAI_API_KEY"))
                         
-                        # Get either the trimmed video or the original for analysis
-                        analysis_video = None
-                        if st.session_state.trimmed_video and os.path.exists(st.session_state.trimmed_video):
-                            analysis_video = st.session_state.trimmed_video
-                            st.success("Analysis will be performed on the trimmed video.")
-                        else:
-                            analysis_video = video_path
-                            if 'trimmed_video' in st.session_state and st.session_state.trimmed_video:
-                                st.warning("Trimmed video not available. Analysis will be performed on the original video.")
-                            
-                        # Create a progress bar
-                        progress_bar = st.progress(0)
-                        st.info("Step 1/4: Extracting frames from video...")
+                        # Extract a frame for the athlete attributes
+                        base64Frames, nframes, fps = movie_ai.extract_frames(analysis_video, max_samples=1)
                         
-                        # Try to extract frames from the trimmed section
-                        base64Frames = []
-                        try:
-                            if 'trimmed_video' in st.session_state and st.session_state.trimmed_video and os.path.exists(st.session_state.trimmed_video):
-                                # Use trimmed video and its time range (starting from 0)
-                                base64Frames = extract_frames_from_range(
-                                    st.session_state.trimmed_video, 
-                                    0, 
-                                    st.session_state.trim_end - st.session_state.trim_start,
-                                    max_frames=max_frames
-                                )
-                            else:
-                                # Use original video with the selected time range
-                                base64Frames = extract_frames_from_range(
-                                    video_path, 
-                                    st.session_state.trim_start, 
-                                    st.session_state.trim_end,
-                                    max_frames=max_frames
-                                )
-                            
-                            progress_bar.progress(25)
-                            if base64Frames:
-                                st.success(f"Successfully extracted {len(base64Frames)} frames from video")
-                            else:
-                                st.warning("Could not extract frames from video, but will continue with analysis")
-                        except Exception as frame_err:
-                            st.warning(f"Could not extract video frames, but continuing with analysis: {str(frame_err)}")
-                        
-                        # Save first frame for athlete attributes if available
                         if base64Frames:
-                            st.info("Step 2/4: Analyzing athlete attributes...")
+                            # Save the frame as an image
+                            image_data = base64.b64decode(base64Frames[0])
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as img_file:
+                                img_file.write(image_data)
+                                frame_path = img_file.name
+                            
+                            # Update session state
+                            st.session_state.current_image = frame_path
+                            st.success("Extracted frame from video for reference")
+                            
+                            # Try to get attributes (catch exceptions to prevent stopping the analysis)
                             try:
-                                # Save the frame as an image
-                                image_data = base64.b64decode(base64Frames[0])
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as img_file:
-                                    img_file.write(image_data)
-                                    frame_path = img_file.name
+                                attributes = get_attributes(frame_path, player_variable)
                                 
-                                # Update session state
-                                st.session_state.current_image = frame_path
+                                # Clean up the response if needed
+                                if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
+                                    attributes = attributes.split("RESPONSE:")[1].strip()
                                 
-                                # Try to get attributes (catch exceptions to prevent stopping the analysis)
-                                try:
-                                    attributes = get_attributes(frame_path, player_variable)
-                                    
-                                    # Clean up the response if needed
-                                    if "DEBUG INFO:" in attributes and "RESPONSE:" in attributes:
-                                        attributes = attributes.split("RESPONSE:")[1].strip()
-                                    
-                                    st.session_state.current_attributes = attributes
-                                except Exception as attr_e:
-                                    st.warning(f"Could not analyze detailed attributes, using defaults: {str(attr_e)}")
-                                    st.session_state.current_attributes = "Experienced jiu-jitsu practitioner"
-                            except Exception as img_e:
-                                st.warning(f"Could not save extracted frame: {str(img_e)}")
-                        
-                        # Progress update
-                        progress_bar.progress(50)
+                                st.session_state.current_attributes = attributes
+                            except Exception as attr_e:
+                                st.warning(f"Could not analyze detailed attributes: {str(attr_e)}")
+                                st.session_state.current_attributes = "Experienced jiu-jitsu practitioner"
                         
                         # Build the analysis prompt for the video
-                        st.info("Step 3/4: Creating analysis query...")
                         match_type = "MMA" if isMMA else "IBJJF sport jiu-jitsu"
                         
                         # Create a persona-specific prompt for the selected master
                         master_prompt = f"You are {selected_master}, a renowned jiu-jitsu master. "
                         master_prompt += f"Analyze this {match_type} match focusing on {player_variable}. "
                         master_prompt += "Give specific, actionable feedback in your unique teaching style. "
-                        master_prompt += "Focus on technique details, strategic advice, and mistakes "
+                        master_prompt += "Focus on technique details, strategic advice, and mistakes from the frames "
                         
                         if context:
-                            master_prompt += f"Pay special attention to: {context}. "
+                            master_prompt +=f"Pay special attention to: {context}. "
                         
-                        progress_bar.progress(75)
-                        st.info("Step 4/4: Generating analysis...")
-                        
-                        # Generate the analysis using the frames
-                        try:
-                            # Try to use extracted frames if available
-                            if base64Frames:
-                                # Create a content array with the text prompt
-                                content = [{"type": "text", "text": master_prompt}]
-                                
-                                # Determine how many frames to use based on availability
-                                frames_to_use = min(8, len(base64Frames))
-                                
-                                # If we have more frames than we want to use, select evenly spaced ones
-                                if len(base64Frames) > frames_to_use:
-                                    # Calculate indices to select frames evenly across the range
-                                    step = len(base64Frames) / frames_to_use
-                                    selected_indices = [int(i * step) for i in range(frames_to_use)]
-                                    selected_frames = [base64Frames[i] for i in selected_indices]
-                                else:
-                                    # Use all frames if we have fewer than the limit
-                                    selected_frames = base64Frames
-                                
-                                # Include timestamp information with each frame
-                                duration = st.session_state.trim_end - st.session_state.trim_start
-                                for i, frame in enumerate(selected_frames):
-                                    # Calculate approximate timestamp for this frame
-                                    if len(selected_frames) > 1:
-                                        relative_position = i / (len(selected_frames) - 1)
-                                        timestamp = st.session_state.trim_start + (relative_position * duration)
-                                        time_str = f"{int(timestamp // 60)}:{int(timestamp % 60):02d}"
-                                    else:
-                                        time_str = f"{int(st.session_state.trim_start // 60)}:{int(st.session_state.trim_start % 60):02d}"
-                                    
-                                    # Add frame with timestamp in alt text
-                                    content.append({
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/jpeg;base64,{frame}",
-                                            "detail": "high"
-                                        }
-                                    })
-                                    
-                                    # Add timestamp text after each image (optional)
-                                    if i < len(selected_frames) - 1:  # Don't add after the last frame
-                                        content.append({
-                                            "type": "text",
-                                            "text": f"Frame at approximately {time_str}"
-                                        })
-                                
-                                # Use the OpenAI API
-                                params = {
-                                    "model": "gpt-4o",
-                                    "messages": [{"role": "user", "content": content}],
-                                    "max_tokens": 1000
-                                }
-                                
-                                st.success(f"Analyzing {len(selected_frames)} frames from the video")
-                                
-                            else:
-                                # No frames available, just use text prompt
-                                alternate_prompt = master_prompt + "\n\n"
-                                alternate_prompt += f"Note: I couldn't extract frames from the video for analysis, "
-                                alternate_prompt += f"but please provide general advice for a {match_type} match "
-                                alternate_prompt += f"focusing on {player_variable}. "
-                                
-                                if context:
-                                    alternate_prompt += f"Pay special attention to these aspects: {context}. "
-                                    
-                                params = {
-                                    "model": "gpt-4o",
-                                    "messages": [{"role": "user", "content": alternate_prompt}],
-                                    "max_tokens": 1000
-                                }
-                                
-                                st.warning("Performing analysis without video frames")
-                            
-                            # Make the API call
-                            if 'OPENAI_API_KEY' in os.environ:
-                                import openai
-                                client = openai.Client(api_key=os.environ.get("OPENAI_API_KEY"))
-                                completion = client.chat.completions.create(**params)
-                                analysis = completion.choices[0].message.content
-                            else:
-                                analysis = f"Error: OpenAI API Key not found. Master {selected_master} couldn't analyze the video."
-                                
-                        except Exception as api_err:
-                            st.error(f"Error calling OpenAI API: {str(api_err)}")
-                            analysis = f"Master {selected_master} says: I apologize, but I encountered a technical issue while analyzing your video. Here are some general tips for {match_type} matches focusing on {player_variable} position:\n\n"
-                            analysis += "1. Focus on maintaining proper posture and balance\n"
-                            analysis += "2. Control key grips and points of contact\n"
-                            analysis += "3. Always be aware of submission opportunities\n"
-                            analysis += "4. Practice transitions between positions regularly"
-                        
-                        # Complete the progress bar
-                        progress_bar.progress(100)
+                        # Generate the video analysis
+                        analysis = movie_ai.generate_video_description(
+                            analysis_video, 
+                            master_prompt,
+                            max_samples=max_frames
+                        )
                         
                         # Display analysis results
                         st.markdown("## Master's Analysis")
@@ -1195,7 +1044,7 @@ elif st.session_state.app_function == "Video Match Analysis":
                         """
                         
                         st.markdown(formatted_analysis)
-                        
+                                                        
                     else:
                         st.error("OpenAI API Key is required for video analysis")
                         
@@ -1571,171 +1420,3 @@ elif st.session_state.app_function == "Anime OODA Analysis":
             st.session_state.right_waiting = False
             st.rerun()
 # End of Anime OODA Analysis section
-
-# Add this helper function in flowstate.py or jiu_jitsu_functions.py
-
-def extract_frames_from_range(video_path, start_time, end_time, max_frames=10):
-    """
-    Extract frames evenly spaced across a specific time range of a video.
-    
-    Parameters:
-    -----------
-    video_path : str
-        Path to the video file
-    start_time : float
-        Start time in seconds
-    end_time : float
-        End time in seconds
-    max_frames : int
-        Maximum number of frames to extract
-        
-    Returns:
-    --------
-    list
-        List of base64 encoded frames
-    """
-    import subprocess
-    import os
-    import tempfile
-    import base64
-    import shutil
-    import math
-    
-    try:
-        # Create temporary directory for frames
-        temp_dir = tempfile.mkdtemp()
-        
-        # Calculate duration and interval between frames
-        duration = end_time - start_time
-        if duration <= 0:
-            print("Invalid duration: start_time must be less than end_time")
-            return []
-            
-        # Make sure we don't try to extract more frames than are available
-        # Assuming standard 30fps, calculate available frames
-        estimated_available_frames = int(duration * 30)
-        frames_to_extract = min(max_frames, estimated_available_frames)
-        
-        if frames_to_extract <= 0:
-            print("Duration too short to extract frames")
-            return []
-            
-        # Calculate time interval between frames
-        interval = duration / frames_to_extract if frames_to_extract > 1 else duration
-        
-        # Find ffmpeg
-        ffmpeg_cmd = None
-        for cmd in ["ffmpeg", "/usr/bin/ffmpeg", "/home/adminuser/.local/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
-            if shutil.which(cmd):
-                ffmpeg_cmd = cmd
-                break
-        
-        base64_frames = []
-        
-        if ffmpeg_cmd:
-            # Extract each frame at calculated timestamps
-            for i in range(frames_to_extract):
-                timestamp = start_time + (i * interval)
-                output_file = os.path.join(temp_dir, f"frame_{i:04d}.jpg")
-                
-                # Run ffmpeg command to extract the specific frame
-                command = [
-                    ffmpeg_cmd,
-                    "-ss", str(timestamp),  # Seek to specific time
-                    "-i", video_path,       # Input file
-                    "-frames:v", "1",       # Extract only one frame
-                    "-q:v", "2",            # Quality
-                    "-y",                   # Overwrite if exists
-                    output_file
-                ]
-                
-                try:
-                    process = subprocess.run(
-                        command,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True
-                    )
-                    
-                    # Check if frame was extracted successfully
-                    if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-                        # Read and encode the frame
-                        with open(output_file, "rb") as img_file:
-                            encoded_frame = base64.b64encode(img_file.read()).decode('utf-8')
-                            base64_frames.append(encoded_frame)
-                except Exception as frame_err:
-                    print(f"Error extracting frame at {timestamp}: {str(frame_err)}")
-                    continue
-        else:
-            # Try using ffmpeg-python library
-            try:
-                import ffmpeg
-                
-                for i in range(frames_to_extract):
-                    timestamp = start_time + (i * interval)
-                    output_file = os.path.join(temp_dir, f"frame_{i:04d}.jpg")
-                    
-                    # Use ffmpeg-python to extract the frame
-                    try:
-                        (
-                            ffmpeg
-                            .input(video_path, ss=timestamp)
-                            .output(output_file, vframes=1)
-                            .run(overwrite_output=True, quiet=True)
-                        )
-                        
-                        # Check if frame was extracted successfully
-                        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-                            # Read and encode the frame
-                            with open(output_file, "rb") as img_file:
-                                encoded_frame = base64.b64encode(img_file.read()).decode('utf-8')
-                                base64_frames.append(encoded_frame)
-                    except Exception as frame_err:
-                        print(f"Error extracting frame at {timestamp}: {str(frame_err)}")
-                        continue
-            except ImportError:
-                print("Could not import ffmpeg-python library")
-        
-        # Clean up
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        
-        print(f"Successfully extracted {len(base64_frames)} frames from video")
-        return base64_frames
-        
-    except Exception as e:
-        print(f"Error extracting frames: {str(e)}")
-        if 'temp_dir' in locals():
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        return []
-
-# Now modify the Analyze Video button code to use this function:
-
-# Find the part where frames are extracted (around line ~1030) and replace with:
-
-# Try to extract frames from the trimmed section
-base64Frames = []
-try:
-    if 'trimmed_video' in st.session_state and st.session_state.trimmed_video and os.path.exists(st.session_state.trimmed_video):
-        # Use trimmed video and its time range (starting from 0)
-        base64Frames = extract_frames_from_range(
-            st.session_state.trimmed_video, 
-            0, 
-            st.session_state.trim_end - st.session_state.trim_start,
-            max_frames=max_frames
-        )
-    else:
-        # Use original video with the selected time range
-        base64Frames = extract_frames_from_range(
-            video_path, 
-            st.session_state.trim_start, 
-            st.session_state.trim_end,
-            max_frames=max_frames
-        )
-    
-    progress_bar.progress(25)
-    if base64Frames:
-        st.success(f"Successfully extracted {len(base64Frames)} frames from video")
-    else:
-        st.warning("Could not extract frames from video, but will continue with analysis")
-except Exception as frame_err:
-    st.warning(f"Could not extract video frames, but continuing with analysis: {str(frame_err)}")
