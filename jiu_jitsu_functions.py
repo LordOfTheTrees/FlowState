@@ -184,7 +184,7 @@ The flow chart should have the following structure:
 - Include at least one reaction-based branch (if opponent does X, do Y)
 - Include specific grips and technical details in the transition labels, making sure that all setps are listed before reaching the main move or position
 
-Example enhanced format:
+Example enhanced format, DO NOT USE THESE, JUST USE AS A REFERENCE:
 ```
 graph LR
     A["{starting_position}"] -->|"Grip right lapel w/ left hand"| B["Deep half-guard control"]
@@ -1292,7 +1292,7 @@ def next_move(flow_chart, move_text, measurables, isMMA=True, favorite_ideas="")
     # Add context information to favorite_ideas to maintain coherence
     context_info = ""
     if context_nodes:
-        context_info = f"Connect to related positions when appropriate: {', '.join(context_nodes)}. "
+        context_info = f"Connect to previously listed flow chart positions with the correct logical structure: {', '.join(context_nodes)}. "
     
     enhanced_ideas = context_info + favorite_ideas
     
