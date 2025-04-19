@@ -123,8 +123,6 @@ def analyse_grappling_match(video, player_variable, isMMA=True, keywords="", sta
     except Exception as e:
         return f"Error analyzing grappling match: {str(e)}"
 
-
-
 def generate_flow_chart_with_start(measurables, starting_position, isMMA=True, favorite_ideas=""):
     """
     Generates a detailed Mermaid-based flow chart of jiu-jitsu moves with complex branching
@@ -1298,85 +1296,6 @@ def next_move(flow_chart, move_text, measurables, isMMA=True, favorite_ideas="")
     
     # Call the enhanced generate_flow_chart_with_start function
     return generate_flow_chart_with_start(measurables, new_position, isMMA, enhanced_ideas)
-    """
-    Generates a new flow chart based on the selected move from an existing chart.
-    """
-    # Remove DEBUG INFO section if present
-    if "DEBUG INFO:" in flow_chart and "MERMAID:" in flow_chart:
-        parts = flow_chart.split("MERMAID:")
-        if len(parts) > 1:
-            flow_chart = parts[1].strip()
-    
-    # Remove any debug info at the end
-    if "[Debug:" in flow_chart:
-        flow_chart = flow_chart.split("[Debug:")[0].strip()
-    
-    # Parse the flow chart to find the next node
-    lines = flow_chart.strip().split('\n')
-    new_position = None
-    node_id = None
-    
-    # First try to find if the text matches a node label
-    for line in lines:
-        if "[" in line and "]" in line:
-            # Extract the node text
-            start_idx = line.find("[")
-            end_idx = line.find("]")
-            node_text = line[start_idx+1:end_idx].strip()
-            
-            # Remove quotes if present
-            if node_text.startswith('"') and node_text.endswith('"'):
-                node_text = node_text[1:-1]
-            
-            # Check if this matches what user entered
-            if move_text.lower() in node_text.lower():
-                # Extract the node ID
-                node_id = line[:start_idx].strip()
-                new_position = node_text
-                break
-    
-    # If no node found, try to find if the text matches a connection label
-    if not new_position:
-        for line in lines:
-            if "-->|" in line and "|" in line[line.index("-->|")+4:]:
-                # Extract the arrow label
-                start_idx = line.index("-->|") + 4
-                end_idx = line.index("|", start_idx)
-                arrow_text = line[start_idx:end_idx].strip()
-                
-                # Remove quotes if present
-                if arrow_text.startswith('"') and arrow_text.endswith('"'):
-                    arrow_text = arrow_text[1:-1]
-                
-                # Check if this matches what user entered
-                if move_text.lower() in arrow_text.lower():
-                    # Find the target node
-                    parts = line.split("|", 1)
-                    if len(parts) > 1:
-                        target_part = parts[1].split("|")[1] if "|" in parts[1] else parts[1]
-                        
-                        # Extract the node ID and text
-                        if "[" in target_part and "]" in target_part:
-                            start_idx = target_part.find("[")
-                            end_idx = target_part.find("]")
-                            node_text = target_part[start_idx+1:end_idx].strip()
-                            
-                            # Remove quotes if present
-                            if node_text.startswith('"') and node_text.endswith('"'):
-                                node_text = node_text[1:-1]
-                            
-                            node_id = target_part[:start_idx].strip()
-                            new_position = node_text
-                            break
-    
-    # If no node found or no text, return the original chart
-    if not new_position:
-        return flow_chart
-    
-    print(f"Found position: {new_position} (node ID: {node_id})")
-    
-    # Generate a new flow chart with the found position as the center
-    return generate_flow_chart_with_start(measurables, new_position, isMMA, favorite_ideas)
 
 def get_attributes(image, player_variable):
     """
