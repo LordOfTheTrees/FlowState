@@ -213,7 +213,7 @@ The flow chart should have the following structure:
 - Include at least one reaction-based branch (if opponent does X, do Y)
 - Include specific grips and technical details in the transition labels
 
-Example enhanced format:
+Example enhanced format. DO NOT USE anything from this exact example, but follow the same structure:
 ```
 graph LR
     A["{starting_position}"] -->|"Grip right lapel w/ left hand"| B["Deep half-guard control"]
@@ -278,194 +278,17 @@ Use {match_type} rules appropriately.
             if isMMA:
                 mermaid_object = f"""
 graph LR
-    A["{starting_position}"] -->|"Frame on jaw, control posture"| B["High Guard with Overhook"]
+    A["{starting_position}"] -->|"THIS IS A DEFAULT GENERATION"| B["High Guard with Overhook"]
     A -->|"Underhook & hip escape"| C["Deep Half-Guard Entry"]
-    A -->|"Butterfly hook & sleeve control"| D["Butterfly Guard with 2-on-1"]
-    A -->|"Feint jab, level change"| E["Double Leg Entry"]
-    A -->|"Collar tie, head position"| F["Clinch Against Cage"]
     
-    B -->|"Pull head down, triangle setup"| G["Triangle Choke Position"]
-    B -->|"Control wrist, hip bump"| H["Kimura Grip from Guard"]
-    
-    C -->|"Drive into underhook, block far knee"| I["Sweep to Top Half-Guard"]
-    C -->|"Shift to lockdown, control ankle"| J["Electric Chair Setup"]
-    
-    D -->|"Elevate with hook, control sleeve"| K["Butterfly Sweep Execution"]
-    D -->|"Arm drag, penetrate angle"| L["Single Leg X-Guard Entry"]
-    
-    E -->|"Drive through, control waist"| M["Bodylock after Takedown"]
-    E -->|"Transition to single, cut corner"| N["Single Leg Finish"]
-    
-    F -->|"Dirty boxing, knee to body"| O["Clinch Striking Setup"]
-    F -->|"Hip throw entry, control sleeve"| P["Harai Goshi Entry"]
-    
-    G -->|"Adjust angle, control posture"| Q["Triangle Finish Details"]
-    H -->|"Roll opponent, expose back"| R["Back Take from Kimura"]
-    
-    K -->|"Immediately pass guard"| S["Knee Cut Pass Sequence"]
-    M -->|"Ground & pound, posture control"| T["GnP to Control Sequence"]
 """
             else:
                 mermaid_object = f"""
 graph LR
-    A["{starting_position}"] -->|"Collar grip, lapel control"| B["Collar & Sleeve Guard"]
+    A["{starting_position}"] -->|"THIS IS A DEFAULT GENERATION"| B["Collar & Sleeve Guard"]
     A -->|"Establish deep underhook"| C["Half-Guard with Underhook"]
-    A -->|"Shin-to-shin, sleeve control"| D["Single Leg X Entry"]
-    A -->|"Double lapel grip, frame"| E["Spider Guard Control"]
-    A -->|"Collar tie, arm drag setup"| F["Seated Guard with Grips"]
-    
-    B -->|"Break posture, feet on hips"| G["Triangle Setup from Guard"]
-    B -->|"Arm drag, control shoulder"| H["Back Take Sequence"]
-    
-    C -->|"Knee torque, block crossface"| I["Old School Sweep Position"]
-    C -->|"Lockdown extension, control ankle"| J["Electric Chair Setup"]
-    
-    D -->|"Off-balance forward, control ankle"| K["Ankle Lock Position"]
-    D -->|"Technical stand-up, sleeve control"| L["Technical Stand-up to Single"]
-    
-    E -->|"Lasso guard transition, foot on bicep"| M["Lasso Guard Control"]
-    E -->|"De la Riva hook, belt grip"| N["De la Riva Guard Position"]
-    
-    F -->|"Single leg entry, control ankle"| O["Single Leg Takedown Setup"]
-    F -->|"Butterfly hook insertion, grip break"| P["Butterfly Elevation"]
-    
-    G -->|"Angle adjustment, wrist control"| Q["Triangle Finish Details"]
-    H -->|"Establish harness grip, hook insertion"| R["Back Control with Hooks"]
-    
-    I -->|"Complete sweep, stabilize position"| S["Sweep to Top Position"]
-    M -->|"Omoplata transition, control posture"| T["Omoplata Attack Sequence"]
 """
             debug_info += "Generated default complex mermaid flowchart (API response didn't contain valid mermaid)\n"
-        
-        # Return both debug info and mermaid object during development
-        return f"DEBUG INFO:\n{debug_info}\n\nMERMAID:\n{mermaid_object}"
-    
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        return f"Error generating flow chart:\n{debug_info}\n\nException: {str(e)}\n\nTraceback:\n{tb}"
-    """
-    Generates a Mermaid-based flow chart of jiu-jitsu moves starting from a specific position.
-    
-    Parameters:
-    -----------
-    measurables : str
-        Physical attributes and characteristics of the athlete
-    starting_position : str
-        The specific jiu-jitsu position to start the flow chart from
-    isMMA : bool, optional
-        Whether to use MMA rules (True) or IBJJF rules (False)
-    favorite_ideas : str, optional
-        Additional ideas or preferences to consider
-        
-    Returns:
-    --------
-    str
-        A mermaid flow chart as a string
-    """
-    # Debug information
-    debug_info = f"Function called with:\nmeasurables: {measurables}\nstarting_position: {starting_position}\nisMMA: {isMMA}\nfavorite_ideas: {favorite_ideas}\n"
-    debug_info += f"API Key set in environment: {'Yes' if os.environ.get('OPENAI_API_KEY') else 'No'}\n"
-    
-    try:
-        # Get GenAI instance with explicit error handling
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            return "Error: OpenAI API Key not found in environment variables"
-        
-        debug_info += f"Creating GenAI instance with API key: {api_key[:5]}...\n"
-        genai = GenAI(api_key)
-        
-        # Create the prompt for flow chart generation with explicit starting position
-        match_type = "MMA" if isMMA else "IBJJF jiu-jitsu"
-        
-        # Include or exclude striking based on ruleset
-        striking_instruction = ""
-        if isMMA:
-            striking_instruction = "Include at least one striking-based transition since this is MMA rules."
-        else:
-            striking_instruction = "DO NOT include any striking techniques since this is IBJJF rules (no strikes allowed)."
-        
-        prompt = f"""Generate a circular Mermaid flow chart showing jiu-jitsu moves.
-
-STARTING POSITION: {starting_position}
-
-Important formatting requirements:
-1. ONLY return the Mermaid diagram code with no explanations
-2. Use "graph LR" instead of "graph TD" to create a more circular layout
-3. Use simple node IDs (A, B, C, etc.)
-4. PUT DOUBLE QUOTES around all node text and arrow labels
-5. Make the starting position node A and place it in the center of the chart
-6. Create transitions that branch outward from the center (node A) to create a circular/radial effect
-7. Limit to 12 nodes maximum
-
-Example format of what I want:
-```
-graph LR
-    A["{starting_position}"] -->|"Action 1"| B["Position 1"]
-    A -->|"Action 2"| C["Position 2"]
-    A -->|"Action 3"| D["Position 3"] 
-    A -->|"Action 4"| E["Position 4"]
-    B -->|"Follow-up"| F["Submission 1"]
-    C -->|"Follow-up"| G["Submission 2"]
-```
-
-The athlete has these attributes: {measurables}
-
-The chart should show 4-6 possible transitions from {starting_position}, with 1 follow-up move for each transition.
-Use {match_type} rules. {striking_instruction}
-"""
-        
-        if favorite_ideas:
-            prompt += f"\nIncorporate these ideas where relevant: {favorite_ideas}"
-        
-        debug_info += f"Created prompt: {prompt[:100]}...\n"
-        
-        # Generate the mermaid object
-        debug_info += "Calling generate_text...\n"
-        mermaid_object = genai.generate_text(prompt)
-        debug_info += f"Response received from API: {mermaid_object[:100]}...\n"
-        
-        # Remove any debug info or explanations
-        if "[Debug:" in mermaid_object:
-            mermaid_object = mermaid_object.split("[Debug:")[0].strip()
-        
-        # If there are backticks in the response, extract just the code
-        if "```" in mermaid_object:
-            code_parts = mermaid_object.split("```")
-            for part in code_parts:
-                if "graph" in part:
-                    mermaid_object = part.strip()
-                    break
-        
-        # Return a simple, guaranteed-valid flowchart if the response doesn't contain valid mermaid syntax
-        if "graph" not in mermaid_object.lower():
-            # Create different default charts based on ruleset
-            if isMMA:
-                mermaid_object = f"""
-graph LR
-    A["{starting_position}"] -->|"Apply pressure"| B["Mount"]
-    A -->|"Switch hips"| C["North-South"]
-    A -->|"Grab wrist"| D["Kimura Grip"]
-    A -->|"Strike to open guard"| E["Open Guard"]
-    B -->|"Isolate arm"| F["Armbar"]
-    C -->|"Control neck"| G["Darce Choke"]
-    D -->|"Rotate"| H["Back Take"]
-    E -->|"Ground and Pound"| I["TKO Position"]
-"""
-            else:
-                mermaid_object = f"""
-graph LR
-    A["{starting_position}"] -->|"Apply pressure"| B["Mount"]
-    A -->|"Switch hips"| C["North-South"]
-    A -->|"Grab wrist"| D["Kimura Grip"]
-    A -->|"Control legs"| E["Half Guard"]
-    B -->|"Isolate arm"| F["Armbar"]
-    C -->|"Control neck"| G["Darce Choke"]
-    D -->|"Rotate"| H["Back Take"]
-    E -->|"Sweep"| I["Top Position"]
-"""
-            debug_info += "Generated default mermaid flowchart (API response didn't contain valid mermaid)\n"
         
         # Return both debug info and mermaid object during development
         return f"DEBUG INFO:\n{debug_info}\n\nMERMAID:\n{mermaid_object}"
@@ -2151,6 +1974,7 @@ def save_default_waiting_images():
         print(f"Created default villain image at {villain_path}")
     
     return hero_path, villain_path
+
 
 def trim_video(input_path, output_path, start_time, end_time):
     """
